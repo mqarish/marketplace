@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         .profile-header {
-            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            background: linear-gradient(135deg, #000000 0%, #222222 100%);
             color: white;
             padding: 3rem 0;
             margin-bottom: 2rem;
@@ -157,7 +157,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 </head>
 <body>
-    <?php include '../includes/customer_navbar.php'; ?>
+    <!-- استدعاء الهيدر الداكن الجديد -->
+    <?php 
+    $root_path = '../';
+    include '../includes/dark_header.php'; 
+    ?>
 
     <div class="profile-header text-center">
         <div class="container">

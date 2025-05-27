@@ -38,9 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if (password_verify($password, $customer['password'])) {
                 // التحقق من حالة الحساب
-                if ($customer['status'] === 'pending') {
-                    $errors[] = "عذراً، حسابك في انتظار الموافقة من قبل الإدارة";
-                } elseif ($customer['status'] === 'blocked') {
+                if ($customer['status'] === 'blocked') {
                     $errors[] = "عذراً، حسابك محظور. يرجى التواصل مع الإدارة";
                 } else {
                     // تسجيل الدخول

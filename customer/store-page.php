@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../includes/init.php';
+require_once '../includes/functions.php';
 
 // التحقق من وجود معرف المتجر
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
@@ -10,6 +11,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 
 $store_id = (int)$_GET['id'];
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
+$category_id = isset($_GET['category']) ? (int)$_GET['category'] : 0;
 
 // جلب تفاصيل المتجر
 $store_sql = "SELECT s.*, 
@@ -44,21 +46,35 @@ if (!$store) {
 }
 
 // جلب المنتجات مع البحث
-$products_sql = "SELECT p.*, c.name as category_name 
+$products_sql = "SELECT p.*, pc.name as category_name,
+                IFNULL(AVG(r.rating), 0) as avg_rating,
+                COUNT(DISTINCT r.id) as rating_count,
+                COUNT(DISTINCT l.id) as likes_count
                 FROM products p 
-                LEFT JOIN categories c ON p.category_id = c.id 
+                LEFT JOIN product_categories pc ON p.category_id = pc.id 
+                LEFT JOIN reviews r ON p.id = r.product_id
+                LEFT JOIN product_likes l ON p.id = l.product_id
                 WHERE p.store_id = ? AND p.status = 'active'";
 $params = array($store_id);
 $types = "i";
 
+// فلترة حسب التصنيف
+ if ($category_id > 0) {
+    $products_sql .= " AND p.category_id = ?";
+    $params[] = $category_id;
+    $types .= "i";
+}
+
 if (!empty($search_query)) {
-    $products_sql .= " AND (p.name LIKE ? OR p.description LIKE ?)";
+    // البحث في اسم المنتج والوصف للحصول على نتائج أكثر
     $search_param = "%{$search_query}%";
+    $products_sql .= " AND (p.name LIKE ? OR p.description LIKE ?)";
     $params[] = $search_param;
     $params[] = $search_param;
     $types .= "ss";
 }
 
+$products_sql .= " GROUP BY p.id";
 $products_sql .= " ORDER BY p.created_at DESC";
 $products_stmt = $conn->prepare($products_sql);
 $products_stmt->bind_param($types, ...$params);
@@ -82,179 +98,157 @@ $active_offers_stmt->bind_param("i", $store_id);
 $active_offers_stmt->execute();
 $active_offers_result = $active_offers_stmt->get_result();
 
+// جلب تصنيفات المنتجات الخاصة بالمتجر
+$categories_sql = "SELECT pc.*, COUNT(p.id) as products_count 
+                  FROM product_categories pc
+                  LEFT JOIN products p ON pc.id = p.category_id AND p.status = 'active'
+                  WHERE pc.store_id = ?
+                  GROUP BY pc.id
+                  ORDER BY products_count DESC";
+$categories_stmt = $conn->prepare($categories_sql);
+$categories_stmt->bind_param("i", $store_id);
+$categories_stmt->execute();
+$categories_result = $categories_stmt->get_result();
+
+?>
+<?php
+// تعيين عنوان الصفحة
+$page_title = htmlspecialchars($store['name']) . ' - السوق';
+
+// تحديد مسار الجذر
+$root_path = '../';
+
+// تعريف ملفات CSS الإضافية قبل تضمين الهيدر
+$additional_css = '<link rel="stylesheet" href="' . $root_path . 'customer/styles/store-page-custom.css?v=' . time() . '">';
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($store['name']); ?> - السوق</title>
+    <title><?php echo $page_title; ?></title>
+    
+    <!-- روابط الخطوط -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    
+    <!-- ملفات CSS الأساسية -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
-    <style>
-        .store-header {
-            background: linear-gradient(135deg, #007bff, #6610f2);
-            padding: 3rem 0;
-            margin-bottom: 2rem;
-            color: white;
-        }
-        .search-form {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 1rem;
-            border-radius: 0.5rem;
-            backdrop-filter: blur(10px);
-        }
-        .search-form .form-control {
-            background: rgba(255, 255, 255, 0.9);
-        }
-        .search-form .form-control:focus {
-            background: white;
-        }
-        .search-results {
-            margin-top: 1rem;
-            color: rgba(255, 255, 255, 0.9);
-        }
-        .product-card {
-            height: 100%;
-            transition: transform 0.2s;
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .product-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
-        }
-        .offer-badge {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 2;
-        }
-        .original-price {
-            text-decoration: line-through;
-            color: #6c757d;
-            font-size: 0.9em;
-        }
-        .product-image-container {
-            position: relative;
-            width: 100%;
-            padding-top: 100%;
-            overflow: hidden;
-            background-color: #f8f9fa;
-        }
-        .product-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            padding: 10px;
-        }
-        .offer-image-container {
-            position: relative;
-            width: 100%;
-            padding-top: 75%;
-            overflow: hidden;
-            background-color: #f8f9fa;
-        }
-        .offer-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            padding: 15px;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="<?php echo $root_path; ?>customer/styles/dark-header.css">
+    <link rel="stylesheet" href="<?php echo $root_path; ?>customer/styles/mobile-fixes.css">
+    <?php if (isset($additional_css)) echo $additional_css; ?>
+    
+    <!-- ملفات الجافاسكريبت الأساسية -->
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
 </head>
 <body>
-    <?php include '../includes/customer_navbar.php'; ?>
 
-    <!-- رأس صفحة المتجر -->
+    <!-- استدعاء الهيدر الداكن الجديد -->
+    <?php 
+    include '../includes/dark_header.php'; 
+    ?>
+
+    <!-- رأس صفحة المتجر بتصميم احترافي -->
     <section class="store-header">
         <div class="container">
             <div class="row align-items-center">
-                <div class="col-md-2 text-center mb-3">
+                <div class="col-md-3 text-center mb-4">
                     <?php if (!empty($store['logo'])): ?>
                         <img src="/uploads/stores/<?php echo htmlspecialchars($store['logo']); ?>" 
                              alt="<?php echo htmlspecialchars($store['name']); ?>" 
-                             class="img-fluid rounded-circle" 
-                             style="width: 150px; height: 150px; object-fit: cover;">
+                             class="store-logo">
                     <?php else: ?>
-                        <div class="bg-light rounded-circle d-flex align-items-center justify-content-center mx-auto" 
-                             style="width: 150px; height: 150px;">
-                            <i class="bi bi-shop text-primary" style="font-size: 4rem;"></i>
+                        <div class="store-logo d-flex align-items-center justify-content-center">
+                            <i class="bi bi-shop" style="font-size: 3rem; color: #333;"></i>
                         </div>
                     <?php endif; ?>
                 </div>
-                <div class="col-md-10">
-                    <div class="row">
-                        <div class="col-md-8">
-                            <h1 class="display-4 mb-3"><?php echo htmlspecialchars($store['name']); ?></h1>
-                            <?php if (!empty($store['description'])): ?>
-                                <p class="lead mb-3"><?php echo htmlspecialchars($store['description']); ?></p>
-                            <?php endif; ?>
-                            <div class="store-info mb-4">
-                                <?php if (!empty($store['phone'])): ?>
-                                    <p class="mb-2">
-                                        <i class="bi bi-telephone-fill me-2 text-white"></i>
-                                        <a href="tel:<?php echo htmlspecialchars($store['phone']); ?>" class="text-white text-decoration-none">
-                                            <?php echo htmlspecialchars($store['phone']); ?>
-                                        </a>
-                                    </p>
-                                <?php endif; ?>
-                                <?php if (!empty($store['address'])): ?>
-                                    <p class="mb-2">
-                                        <i class="bi bi-geo-alt-fill me-2 text-white"></i>
-                                        <?php echo htmlspecialchars($store['address']); ?>
-                                    </p>
-                                <?php endif; ?>
-                                <?php if (!empty($store['city'])): ?>
-                                    <p class="mb-2">
-                                        <i class="bi bi-building me-2 text-white"></i>
-                                        <?php echo htmlspecialchars($store['city']); ?>
-                                    </p>
-                                <?php endif; ?>
-                            </div>
-                            <div class="store-stats mb-3">
-                                <span class="badge bg-light text-dark">
-                                    <i class="bi bi-box me-1"></i>
-                                    <?php echo $store['products_count']; ?> منتج
-                                </span>
-                                <?php if ($store['active_offers_count'] > 0): ?>
-                                    <span class="badge bg-danger ms-2">
-                                        <i class="bi bi-tag me-1"></i>
-                                        <?php echo $store['active_offers_count']; ?> عروض نشطة
-                                    </span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="search-form">
-                                <form action="" method="GET" class="d-flex flex-column gap-2">
-                                    <input type="hidden" name="id" value="<?php echo $store_id; ?>">
-                                    <div class="input-group">
-                                        <input type="search" name="search" class="form-control" 
-                                               placeholder="ابحث في منتجات المتجر..." 
-                                               value="<?php echo htmlspecialchars($search_query); ?>">
-                                        <button type="submit" class="btn btn-light">
+                <div class="col-md-9">
+                    <div class="store-info">
+                        <h1 class="store-name"><?php echo htmlspecialchars($store['name']); ?></h1>
+                        <?php if (!empty($store['description'])): ?>
+                            <p class="store-description"><?php echo htmlspecialchars($store['description']); ?></p>
+                        <?php endif; ?>
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-7">
+                                <!-- شريط البحث المخصص للمتجر -->
+                                <div class="store-search-container">
+                                    <form action="store-page.php" method="GET" class="store-search-form">
+                                        <input type="hidden" name="id" value="<?php echo $store_id; ?>">
+                                        <div class="search-input-wrap">
+                                            <input type="text" name="search" class="store-search-input" 
+                                                placeholder="ابحث في منتجات المتجر..." 
+                                                value="<?php echo htmlspecialchars($search_query); ?>">
+                                        </div>
+                                        <button type="submit" class="store-search-btn">
                                             <i class="bi bi-search"></i>
                                         </button>
-                                    </div>
-                                    <?php if (!empty($search_query)): ?>
-                                        <div class="search-results">
-                                            <small>
-                                                نتائج البحث عن: "<?php echo htmlspecialchars($search_query); ?>"
-                                                <a href="?id=<?php echo $store_id; ?>" class="text-white ms-2">
-                                                    <i class="bi bi-x-circle"></i> مسح البحث
-                                                </a>
-                                            </small>
+                                    </form>
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="store-contact">
+                                    <?php if (!empty($store['phone'])): ?>
+                                        <div class="mb-2">
+                                            <i class="bi bi-telephone-fill me-2"></i>
+                                            <span><?php echo htmlspecialchars($store['phone']); ?></span>
                                         </div>
                                     <?php endif; ?>
-                                </form>
+                                    <?php if (!empty($store['address'])): ?>
+                                        <div class="mb-2">
+                                            <i class="bi bi-geo-alt-fill me-2"></i>
+                                            <span><?php echo htmlspecialchars($store['address']); ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($store['city'])): ?>
+                                        <div class="mb-2">
+                                            <i class="bi bi-building me-2"></i>
+                                            <span><?php echo htmlspecialchars($store['city']); ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <!-- روابط التواصل الاجتماعي -->
+                                    <div class="social-links mt-3">
+                                        <?php if (!empty($store['facebook_url'])): ?>
+                                            <a href="<?php echo htmlspecialchars($store['facebook_url']); ?>" target="_blank" class="social-icon facebook me-2">
+                                                <i class="bi bi-facebook"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($store['twitter_url'])): ?>
+                                            <a href="<?php echo htmlspecialchars($store['twitter_url']); ?>" target="_blank" class="social-icon twitter me-2">
+                                                <i class="bi bi-twitter"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($store['instagram_url'])): ?>
+                                            <a href="<?php echo htmlspecialchars($store['instagram_url']); ?>" target="_blank" class="social-icon instagram me-2">
+                                                <i class="bi bi-instagram"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($store['whatsapp'])): ?>
+                                            <a href="https://wa.me/<?php echo htmlspecialchars($store['whatsapp']); ?>" target="_blank" class="social-icon whatsapp">
+                                                <i class="bi bi-whatsapp"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+                        
+                        <!-- إحصائيات المتجر -->
+                        <div class="store-stats">
+                            <div class="stat-item">
+                                <i class="bi bi-box-seam"></i>
+                                <span><?php echo $store['products_count']; ?> منتج</span>
+                            </div>
+                            <?php if ($store['active_offers_count'] > 0): ?>
+                            <div class="stat-item">
+                                <i class="bi bi-tags"></i>
+                                <span><?php echo $store['active_offers_count']; ?> عرض نشط</span>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -263,6 +257,40 @@ $active_offers_result = $active_offers_stmt->get_result();
     </section>
 
     <div class="container mb-5">
+        
+        <?php if ($categories_result->num_rows > 0): ?>
+        <!-- شريط التصنيفات المتحرك بتصميم احترافي -->
+        <section class="categories-section">
+            <h2>تصنيفات المنتجات</h2>
+            <div class="categories-grid">
+                <?php 
+                // عرض التصنيفات في شبكة بدون تكرار
+                $categories_result->data_seek(0);
+                while ($category = $categories_result->fetch_assoc()): 
+                ?>
+                <a href="store-page.php?id=<?php echo $store_id; ?>&category=<?php echo $category['id']; ?>" class="text-decoration-none">
+                    <div class="category-item">
+                        <?php if (!empty($category['image_url'])): ?>
+                            <div class="img-container">
+                                <img alt="<?php echo htmlspecialchars($category['name']); ?>" loading="lazy" 
+                                     src="<?php echo htmlspecialchars('../' . $category['image_url']); ?>">
+                            </div>
+                        <?php else: ?>
+                            <div class="img-container">
+                                <div class="placeholder-img">
+                                    <i class="bi bi-grid-3x3-gap" style="font-size: 1.5rem; color: #FF7A00;"></i>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        <span class="category-name"><?php echo htmlspecialchars($category['name']); ?></span>
+                        <span class="product-count"><?php echo $category['products_count']; ?> منتج</span>
+                    </div>
+                </a>
+                <?php endwhile; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
         <!-- العروض النشطة -->
         <?php if ($active_offers_result->num_rows > 0): ?>
             <section class="mb-5">
@@ -270,7 +298,7 @@ $active_offers_result = $active_offers_stmt->get_result();
                 <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
                     <?php while ($offer = $active_offers_result->fetch_assoc()): ?>
                         <div class="col">
-                            <div class="card h-100 product-card">
+                            <div class="card h-100">
                                 <div class="offer-image-container">
                                     <?php if (!empty($offer['image_path'])): ?>
                                         <img src="../<?php echo htmlspecialchars($offer['image_path']); ?>" 
@@ -306,14 +334,87 @@ $active_offers_result = $active_offers_stmt->get_result();
         <?php if ($products_result->num_rows > 0): ?>
             <section>
                 <h2 class="mb-4">المنتجات المتوفرة</h2>
+
                 <div class="row row-cols-1 row-cols-md-4 g-4">
                     <?php while ($product = $products_result->fetch_assoc()): ?>
                         <div class="col">
                             <div class="card h-100">
                                 <?php if (!empty($product['image_url'])): ?>
-                                    <img src="../<?php echo htmlspecialchars($product['image_url']); ?>" 
-                                         class="card-img-top" alt="<?php echo htmlspecialchars($product['name']); ?>"
-                                         style="height: 200px; object-fit: contain;">
+                                    <!-- حاوية الصورة مع الكاروسيل -->
+                                    <div class="product-card-image">
+                                        <!-- معرف للصورة -->
+                                        <a href="product-details.php?id=<?php echo $product['id']; ?>" class="d-block">
+                                            <div id="productCarousel-<?php echo $product['id']; ?>" class="carousel slide" data-bs-ride="false" data-bs-interval="false">
+                                                <div class="carousel-inner">
+                                                    <?php
+                                                    // جلب صور المنتج من جدول product_images
+                                                    $images_sql = "SELECT * FROM product_images WHERE product_id = ? ORDER BY display_order ASC";
+                                                    $images_stmt = $conn->prepare($images_sql);
+                                                    $has_multiple_images = false;
+                                                    $product_images = [];
+                                                    
+                                                    if ($images_stmt) {
+                                                        $images_stmt->bind_param("i", $product['id']);
+                                                        $images_stmt->execute();
+                                                        $images_result = $images_stmt->get_result();
+                                                        $has_multiple_images = ($images_result->num_rows > 1);
+                                                        
+                                                        // تخزين الصور في مصفوفة لاستخدامها لاحقًا
+                                                        while ($image = $images_result->fetch_assoc()) {
+                                                            $product_images[] = $image;
+                                                        }
+                                                    }
+                                                    
+                                                    // إضافة مؤشرات الكاروسيل (النقاط) إذا كان هناك أكثر من صورة
+                                                    if ($has_multiple_images) {
+                                                        // إضافة مؤشرات الكاروسيل
+                                                        ?>
+                                                        <div class="carousel-indicators">
+                                                            <?php foreach ($product_images as $idx => $img): ?>
+                                                                <button type="button" data-bs-target="#productCarousel-<?php echo $product['id']; ?>" data-bs-slide-to="<?php echo $idx; ?>" class="<?php echo ($idx === 0) ? 'active' : ''; ?>" aria-current="<?php echo ($idx === 0) ? 'true' : 'false'; ?>" aria-label="شريحة <?php echo $idx + 1; ?>"></button>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                        <?php
+                                                        
+                                                        // عرض الصور المتعددة
+                                                        foreach ($product_images as $index => $image): 
+                                                    ?>
+                                                        <div class="carousel-item <?php echo ($index === 0) ? 'active' : ''; ?>">
+                                                            <img src="../<?php echo htmlspecialchars($image['image_url']); ?>" 
+                                                                 class="product-image" alt="<?php echo htmlspecialchars($product['name']); ?>">
+                                                        </div>
+                                                    <?php 
+                                                        endforeach; 
+                                                    } else { 
+                                                        // إذا لم تكن هناك صور متعددة، عرض الصورة الرئيسية
+                                                    ?>
+                                                        <div class="carousel-item active">
+                                                            <img src="../<?php echo htmlspecialchars($product['image_url']); ?>" 
+                                                                 class="product-image" alt="<?php echo htmlspecialchars($product['name']); ?>">
+                                                        </div>
+                                                    <?php } ?>
+                                                </div>
+                                
+                                                <!-- أزرار التنقل -->
+                                                <?php if ($has_multiple_images): ?>
+                                                <button class="carousel-control-prev" type="button" data-bs-target="#productCarousel-<?php echo $product['id']; ?>" data-bs-slide="prev" 
+                                                        style="position: absolute; right: 10px; left: auto; width: 35px; height: 35px; background-color: rgba(255, 153, 51, 0.9); border-radius: 50%; top: 50%; transform: translateY(-50%); opacity: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 5;" 
+                                                        onclick="event.preventDefault(); event.stopPropagation(); var carousel = bootstrap.Carousel.getInstance(document.getElementById('productCarousel-<?php echo $product['id']; ?>')); carousel.prev();">
+                                                    <span class="carousel-control-prev-icon" aria-hidden="true" style="width: 20px; height: 20px;"></span>
+                                                    <span class="visually-hidden">السابق</span>
+                                                </button>
+                                                <button class="carousel-control-next" type="button" data-bs-target="#productCarousel-<?php echo $product['id']; ?>" data-bs-slide="next"
+                                                        style="position: absolute; left: 10px; right: auto; width: 35px; height: 35px; background-color: rgba(255, 153, 51, 0.9); border-radius: 50%; top: 50%; transform: translateY(-50%); opacity: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 5;" 
+                                                        onclick="event.preventDefault(); event.stopPropagation(); var carousel = bootstrap.Carousel.getInstance(document.getElementById('productCarousel-<?php echo $product['id']; ?>')); carousel.next();">
+                                                    <span class="carousel-control-next-icon" aria-hidden="true" style="width: 20px; height: 20px;"></span>
+                                                    <span class="visually-hidden">التالي</span>
+                                                </button>
+                                                <?php endif; ?>
+                                                
+                                                <!-- تم إزالة أزرار التنقل المخفية غير الضرورية -->
+                                            </div>
+                                        </a>
+                                    </div>
                                 <?php else: ?>
                                     <div class="card-img-top bg-light d-flex align-items-center justify-content-center" 
                                          style="height: 200px;">
@@ -323,22 +424,88 @@ $active_offers_result = $active_offers_stmt->get_result();
                                 
                                 <div class="card-body">
                                     <h5 class="card-title"><?php echo htmlspecialchars($product['name']); ?></h5>
-                                    <p class="card-text">
-                                        <?php if (!empty($product['description'])): ?>
-                                            <?php echo htmlspecialchars($product['description']); ?>
+                                    <?php if (!empty($product['description'])): ?>
+                                        <p class="card-text small text-muted"><?php echo htmlspecialchars(substr($product['description'], 0, 50)) . (strlen($product['description']) > 50 ? '...' : ''); ?></p>
+                                    <?php endif; ?>
+                                    <p class="card-price" style="direction: rtl;">
+                                        <?php if (isset($product['hide_price']) && $product['hide_price'] == 1): ?>
+                                            <span class="text-primary">
+                                                <i class="bi bi-telephone-fill me-1"></i> اتصل للسعر
+                                            </span>
+                                            <?php if (!empty($store['phone'])): 
+                                                // تنسيق رقم الهاتف للواتساب (إزالة أي أحرف غير رقمية)
+                                                $whatsapp_number = preg_replace('/[^0-9]/', '', $store['phone']);
+                                            ?>
+                                            <a href="https://wa.me/<?php echo $whatsapp_number; ?>?text=<?php echo urlencode('مرحباً، أنا مهتم بمنتج ' . $product['name'] . ' على السوق الإلكتروني. هل يمكنك إخباري بالسعر؟'); ?>" target="_blank" class="btn btn-sm btn-success ms-2">
+                                                <i class="bi bi-whatsapp"></i>
+                                            </a>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <?php echo number_format($product['price'], 2); ?>
+                                            <?php 
+                                            // عرض العملة المناسبة
+                                            if (isset($product['currency'])) {
+                                                switch ($product['currency']) {
+                                                    case 'SAR':
+                                                        echo ' ر.س';
+                                                        break;
+                                                    case 'YER':
+                                                        echo ' ر.ي';
+                                                        break;
+                                                    case 'USD':
+                                                        echo ' $';
+                                                        break;
+                                                    default:
+                                                        echo ' ر.س';
+                                                }
+                                            } else {
+                                                echo ' ر.س';
+                                            }
+                                            ?>
                                         <?php endif; ?>
                                     </p>
-                                    <p class="text-primary fs-5 fw-bold mb-0">
-                                        <?php echo number_format($product['price'], 2); ?> ريال
-                                    </p>
+                                    
+                                    <!-- عرض التقييم والإعجابات بشكل احترافي جديد -->
+                                    <div class="product-meta">
+                                        <?php 
+                                        $rating = round($product['avg_rating'] * 2) / 2; // تدوير لأقرب 0.5
+                                        ?>
+                                        <div class="rating-pill" id="rating-<?php echo $product['id']; ?>">
+                                            <span class="value"><?php echo number_format($rating, 1); ?></span>
+                                            <div class="stars-wrap">
+                                                <?php 
+                                                // عرض النجوم مع إمكانية التقييم
+                                                for ($i = 1; $i <= 5; $i++) {
+                                                    echo '<i class="bi bi-star' . ($i <= $rating ? '-fill' : '') . ' rate-star" data-product="' . $product['id'] . '" data-rating="' . $i . '"></i>';
+                                                }
+                                                ?>
+                                            </div>
+                                            <span class="meta-count">(<?php echo $product['rating_count']; ?>)</span>
+                                        </div>
+                                        
+                                        <div class="likes-pill">
+                                            <?php 
+                                            // التحقق مما إذا كان المستخدم قد أعجب بالمنتج مسبقاً
+                                            $isLiked = false;
+                                            if (isset($_SESSION['customer_id'])) {
+                                                $check_like = $conn->prepare("SELECT id FROM product_likes WHERE product_id = ? AND customer_id = ?");
+                                                $check_like->bind_param("ii", $product['id'], $_SESSION['customer_id']);
+                                                $check_like->execute();
+                                                $like_result = $check_like->get_result();
+                                                $isLiked = $like_result->num_rows > 0;
+                                            }
+                                            ?>
+                                            <i class="bi <?php echo $isLiked ? 'bi-heart-fill liked' : 'bi-heart'; ?> like-btn" data-product="<?php echo $product['id']; ?>"></i>
+                                            <span class="like-count" id="like-count-<?php echo $product['id']; ?>"><?php echo $product['likes_count']; ?></span>
+                                            <span class="meta-count">إعجاب</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="text-center mb-2">
+                                        <span class="category-badge"><?php echo htmlspecialchars($product['category_name'] ?? 'غير مصنف'); ?></span>
+                                    </div>
+                                    <a href="product-details.php?id=<?php echo $product['id']; ?>" class="btn-details">عرض التفاصيل</a>
                                 </div>
-                                <?php if (!empty($product['category_name'])): ?>
-                                <div class="card-footer">
-                                    <small class="text-muted">
-                                        التصنيف: <?php echo htmlspecialchars($product['category_name']); ?>
-                                    </small>
-                                </div>
-                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endwhile; ?>
@@ -352,5 +519,173 @@ $active_offers_result = $active_offers_stmt->get_result();
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // تم إزالة وظيفة المفضلة
+    
+    // تفعيل كاروسيل بوتستراب لجميع المنتجات
+    document.addEventListener('DOMContentLoaded', function() {
+        // تمكين مؤشرات bootstrap
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        
+        // تهيئة جميع كاروسيلات المنتجات
+        document.querySelectorAll('.carousel').forEach(function(carousel) {
+            new bootstrap.Carousel(carousel, {
+                interval: false,  // إيقاف التقلب التلقائي للصور
+                wrap: true,       // التفاف الكاروسيل عند الوصول إلى النهاية
+                touch: true,      // دعم اللمس للأجهزة المحمولة
+                pause: 'hover',   // إيقاف التقلب عند تمرير مؤشر الماوس فوق الكاروسيل
+                ride: false       // لا تشغيل الكاروسيل تلقائيًا
+            });
+        });
+        
+        // منع انتشار الحدث عند النقر على أزرار التنقل
+        document.querySelectorAll('.carousel-control-prev, .carousel-control-next').forEach(function(button) {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+        
+        // تفعيل الكاروسيل
+        const carousels = document.querySelectorAll('.carousel');
+        carousels.forEach(carousel => {
+            const instance = new bootstrap.Carousel(carousel, {
+                interval: false, // لا تقوم بالتدوير تلقائياً
+                wrap: true
+            });
+        });
+        
+        // إضافة مستمعي الأحداث للتقييم
+        const rateStars = document.querySelectorAll('.rate-star');
+        rateStars.forEach(star => {
+            // مستمع لتأثير التحويم
+            star.addEventListener('mouseenter', function() {
+                const rating = parseInt(this.getAttribute('data-rating'));
+                const productId = this.getAttribute('data-product');
+                const starsContainer = this.closest('.stars-wrap');
+                const stars = starsContainer.querySelectorAll('.rate-star');
+                
+                stars.forEach((s, index) => {
+                    if (index < rating) {
+                        s.classList.add('hovered');
+                    } else {
+                        s.classList.remove('hovered');
+                    }
+                });
+            });
+            
+            // مستمع لإزالة تأثير التحويم
+            star.addEventListener('mouseleave', function() {
+                const starsContainer = this.closest('.stars-wrap');
+                const stars = starsContainer.querySelectorAll('.rate-star');
+                stars.forEach(s => s.classList.remove('hovered'));
+            });
+            
+            // مستمع للنقر لإرسال التقييم
+            star.addEventListener('click', function() {
+                <?php if (isset($_SESSION['customer_id'])): ?>
+                const rating = parseInt(this.getAttribute('data-rating'));
+                const productId = this.getAttribute('data-product');
+                
+                // إرسال التقييم باستخدام AJAX
+                const formData = new FormData();
+                formData.append('product_id', productId);
+                formData.append('rating', rating);
+                
+                fetch('handle_rating.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // تحديث النجوم والتقييم
+                        const ratingContainer = document.getElementById('rating-' + productId);
+                        const ratingValue = ratingContainer.querySelector('.value');
+                        const stars = ratingContainer.querySelectorAll('.rate-star');
+                        
+                        // تحديث قيمة التقييم
+                        ratingValue.textContent = rating.toFixed(1);
+                        
+                        // تحديث النجوم
+                        stars.forEach((s, index) => {
+                            if (index < rating) {
+                                s.classList.remove('bi-star');
+                                s.classList.add('bi-star-fill');
+                            } else {
+                                s.classList.remove('bi-star-fill');
+                                s.classList.add('bi-star');
+                            }
+                        });
+                        
+                        // إظهار رسالة نجاح
+                        alert('تم تسجيل تقييمك بنجاح!');
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('حدث خطأ في معالجة طلبك');
+                });
+                <?php else: ?>
+                alert('يرجى تسجيل الدخول لتتمكن من تقييم المنتجات');
+                <?php endif; ?>
+            });
+        });
+        
+        // إضافة مستمعي الأحداث للإعجاب
+        const likeButtons = document.querySelectorAll('.like-btn');
+        likeButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                <?php if (isset($_SESSION['customer_id'])): ?>
+                const productId = this.getAttribute('data-product');
+                const isLiked = this.classList.contains('liked');
+                
+                // إرسال الإعجاب باستخدام AJAX
+                const formData = new FormData();
+                formData.append('product_id', productId);
+                
+                fetch('handle_like.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // تبديل حالة الإعجاب
+                        const likeCount = document.getElementById('like-count-' + productId);
+                        let count = parseInt(likeCount.textContent);
+                        
+                        if (data.action === 'like') {
+                            // إضافة إعجاب
+                            this.classList.remove('bi-heart');
+                            this.classList.add('bi-heart-fill');
+                            this.classList.add('liked');
+                            count++;
+                        } else {
+                            // إلغاء إعجاب
+                            this.classList.remove('bi-heart-fill');
+                            this.classList.remove('liked');
+                            this.classList.add('bi-heart');
+                            count--;
+                        }
+                        
+                        likeCount.textContent = count;
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('حدث خطأ في معالجة طلبك');
+                });
+                <?php else: ?>
+                alert('يرجى تسجيل الدخول لتتمكن من الإعجاب بالمنتجات');
+                <?php endif; ?>
+            });
+        });
+    });
+</script>
 </body>
 </html>

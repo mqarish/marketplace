@@ -15,6 +15,7 @@ if (isset($_SESSION['customer_id'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = $_POST['name'] ?? '';
     $email = $_POST['email'] ?? '';
+    $phone = $_POST['phone'] ?? '';
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
     $errors = [];
@@ -27,6 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $errors[] = "يرجى إدخال البريد الإلكتروني";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = "البريد الإلكتروني غير صالح";
+    }
+    if (empty($phone)) {
+        $errors[] = "يرجى إدخال رقم الهاتف";
+    } elseif (!preg_match('/^[0-9]{9}$/', $phone)) {
+        $errors[] = "رقم الهاتف غير صالح، يجب أن يتكون من 9 أرقام بالضبط";
     }
     if (empty($password)) {
         $errors[] = "يرجى إدخال كلمة المرور";
@@ -47,6 +53,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         $stmt->close();
     }
+    
+    // التحقق من وجود رقم الهاتف
+    if (empty($errors)) {
+        $stmt = $conn->prepare("SELECT id FROM customers WHERE phone = ?");
+        $stmt->bind_param("s", $phone);
+        $stmt->execute();
+        if ($stmt->get_result()->num_rows > 0) {
+            $errors[] = "رقم الهاتف مستخدم بالفعل، يرجى استخدام رقم هاتف آخر";
+        }
+        $stmt->close();
+    }
 
     // إذا لم تكن هناك أخطاء، قم بإنشاء الحساب
     if (empty($errors)) {
@@ -61,26 +78,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     name VARCHAR(255) NOT NULL,
                     email VARCHAR(255) NOT NULL UNIQUE,
+                    phone VARCHAR(15) NOT NULL,
                     password VARCHAR(255) NOT NULL,
-                    status ENUM('pending', 'active', 'blocked') DEFAULT 'pending',
+                    status ENUM('pending', 'active', 'blocked') DEFAULT 'active',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )";
                 $conn->query($create_table);
             }
             
-            $stmt = $conn->prepare("INSERT INTO customers (name, email, password, status, created_at) VALUES (?, ?, ?, 'pending', NOW())");
+            $stmt = $conn->prepare("INSERT INTO customers (name, email, phone, password, status, created_at) VALUES (?, ?, ?, ?, 'active', NOW())");
             if (!$stmt) {
                 throw new Exception("خطأ في إعداد الاستعلام: " . $conn->error);
             }
             
-            $stmt->bind_param("sss", $name, $email, $hashed_password);
+            $stmt->bind_param("ssss", $name, $email, $phone, $hashed_password);
             
             if (!$stmt->execute()) {
                 throw new Exception("خطأ في تنفيذ الاستعلام: " . $stmt->error);
             }
             
             // عرض رسالة نجاح
-            $_SESSION['success_message'] = "تم إنشاء حسابك بنجاح. يرجى الانتظار حتى تتم الموافقة على حسابك من قبل الإدارة.";
+            $_SESSION['success_message'] = "تم إنشاء حسابك بنجاح. يمكنك الآن تسجيل الدخول إلى حسابك.";
             header('Location: login.php');
             exit();
             
@@ -269,24 +287,83 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
 
             <form action="register.php" method="post" class="needs-validation" novalidate>
+                <?php
+                // إنشاء مصفوفة لتخزين الحقول التي تحتوي على أخطاء
+                $error_fields = [];
+                if (!empty($errors)) {
+                    foreach ($errors as $error) {
+                        if (strpos($error, 'الاسم') !== false) {
+                            $error_fields[] = 'name';
+                        }
+                        if (strpos($error, 'البريد') !== false) {
+                            $error_fields[] = 'email';
+                        }
+                        if (strpos($error, 'الهاتف') !== false) {
+                            $error_fields[] = 'phone';
+                        }
+                        if (strpos($error, 'كلمة المرور') !== false) {
+                            $error_fields[] = 'password';
+                            $error_fields[] = 'confirm_password';
+                        }
+                    }
+                }
+                ?>
+
                 <div class="form-floating mb-3">
-                    <input type="text" class="form-control" id="name" name="name" placeholder="الاسم" required>
+                    <input type="text" class="form-control <?php echo in_array('name', $error_fields) ? 'is-invalid' : ''; ?>" 
+                           id="name" name="name" placeholder="الاسم" 
+                           value="<?php echo htmlspecialchars($name ?? ''); ?>" required>
                     <label for="name">الاسم</label>
+                    <?php if (in_array('name', $error_fields)): ?>
+                        <div class="invalid-feedback">يرجى إدخال اسم صحيح</div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-floating mb-3">
-                    <input type="email" class="form-control" id="email" name="email" placeholder="البريد الإلكتروني" required>
+                    <input type="email" class="form-control <?php echo in_array('email', $error_fields) ? 'is-invalid' : ''; ?>" 
+                           id="email" name="email" placeholder="البريد الإلكتروني" 
+                           value="<?php echo htmlspecialchars($email ?? ''); ?>" required>
                     <label for="email">البريد الإلكتروني</label>
+                    <div class="<?php echo in_array('email', $error_fields) ? 'invalid-feedback' : 'form-text text-light'; ?>">
+                        <?php if (in_array('email', $error_fields)): ?>
+                            يرجى إدخال بريد إلكتروني صحيح
+                        <?php else: ?>
+                            يرجى إدخال بريد إلكتروني صالح (مثال: example@domain.com)
+                        <?php endif; ?>
+                    </div>
                 </div>
 
                 <div class="form-floating mb-3">
-                    <input type="password" class="form-control" id="password" name="password" placeholder="كلمة المرور" required>
-                    <label for="password">كلمة المرور</label>
+                    <input type="tel" class="form-control <?php echo in_array('phone', $error_fields) ? 'is-invalid' : ''; ?>" 
+                           id="phone" name="phone" placeholder="رقم الهاتف" 
+                           pattern="[0-9]{9}" title="يجب أن يتكون رقم الهاتف من 9 أرقام بالضبط" 
+                           value="<?php echo htmlspecialchars($phone ?? ''); ?>" required>
+                    <label for="phone">رقم الهاتف</label>
+                    <div class="<?php echo in_array('phone', $error_fields) ? 'invalid-feedback' : 'form-text text-light'; ?>">
+                        <?php if (in_array('phone', $error_fields)): ?>
+                            يجب أن يتكون رقم الهاتف من 9 أرقام بالضبط
+                        <?php else: ?>
+                            يجب أن يتكون رقم الهاتف من 9 أرقام بالضبط
+                        <?php endif; ?>
+                    </div>
                 </div>
 
-                <div class="form-floating mb-4">
-                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="تأكيد كلمة المرور" required>
+                <div class="form-floating mb-3">
+                    <input type="password" class="form-control <?php echo in_array('password', $error_fields) ? 'is-invalid' : ''; ?>" 
+                           id="password" name="password" placeholder="كلمة المرور" required>
+                    <label for="password">كلمة المرور</label>
+                    <?php if (in_array('password', $error_fields)): ?>
+                        <div class="invalid-feedback">يجب أن تكون كلمة المرور 6 أحرف على الأقل</div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-floating mb-3">
+                    <input type="password" class="form-control <?php echo in_array('confirm_password', $error_fields) ? 'is-invalid' : ''; ?>" 
+                           id="confirm_password" name="confirm_password" placeholder="تأكيد كلمة المرور" required>
                     <label for="confirm_password">تأكيد كلمة المرور</label>
+                    <?php if (in_array('confirm_password', $error_fields)): ?>
+                        <div class="invalid-feedback">كلمتا المرور غير متطابقتين</div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="d-grid gap-2">

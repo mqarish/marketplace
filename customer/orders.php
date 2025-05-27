@@ -54,7 +54,11 @@ $orders_result = $stmt->get_result();
     </style>
 </head>
 <body>
-    <?php include '../includes/customer_navbar.php'; ?>
+    <!-- استدعاء الهيدر الداكن الجديد -->
+    <?php 
+    $root_path = '../';
+    include '../includes/dark_header.php'; 
+    ?>
 
     <div class="container py-5">
         <h1 class="mb-4">طلباتي</h1>
