@@ -1,4 +1,9 @@
 <?php
+// بدء الجلسة قبل أي محتوى إذا لم تكن موجودة بالفعل
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
 // تفعيل عرض الأخطاء
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);

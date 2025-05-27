@@ -17,7 +17,17 @@ if (!isset($conn)) {
 
 // تعريف المسار الأساسي
 if (!defined('BASE_URL')) {
-    define('BASE_URL', '/marketplace');
+    // التحقق من البيئة الحالية (محلية أو إنتاجية)
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    
+    // إذا كانت البيئة محلية
+    if (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false) {
+        define('BASE_URL', '/marketplace');
+    } 
+    // إذا كانت البيئة إنتاجية
+    else {
+        define('BASE_URL', '');
+    }
 }
 
 // تعريف مسارات الملفات

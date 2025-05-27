@@ -114,6 +114,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if (!$update_stmt->execute()) {
                     throw new Exception("حدث خطأ أثناء تحديث العرض: " . $update_stmt->error);
                 }
+                
+                // التحقق من وجود سجل في جدول offer_store_products
+                $check_store_offer_sql = "SELECT id FROM offer_store_products WHERE offer_id = ? AND store_id = ?";
+                $check_store_offer_stmt = $conn->prepare($check_store_offer_sql);
+                $check_store_offer_stmt->bind_param("ii", $offer_id, $store_id);
+                $check_store_offer_stmt->execute();
+                $check_store_offer_result = $check_store_offer_stmt->get_result();
+                
+                // إذا لم يكن موجوداً، أضفه
+                if ($check_store_offer_result->num_rows === 0) {
+                    $insert_store_offer_sql = "INSERT INTO offer_store_products (offer_id, store_id) VALUES (?, ?)";
+                    $insert_store_offer_stmt = $conn->prepare($insert_store_offer_sql);
+                    $insert_store_offer_stmt->bind_param("ii", $offer_id, $store_id);
+                    
+                    if (!$insert_store_offer_stmt->execute()) {
+                        throw new Exception('حدث خطأ أثناء ربط العرض بالمتجر: ' . $insert_store_offer_stmt->error);
+                    }
+                }
 
                 // حذف جميع المنتجات المرتبطة بالعرض
                 $delete_products_sql = "DELETE FROM offer_products WHERE offer_id = ?";
@@ -146,13 +164,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("حدث خطأ أثناء حذف منتجات العرض المستقلة: " . $delete_items_stmt->error);
                 }
 
-                // إضافة منتجات العرض المستقلة
+                // إضافة منتجات العرض
                 if (isset($_POST['items']) && is_array($_POST['items'])) {
-                    $insert_items_sql = "INSERT INTO offer_items (offer_id, name, price, image_url, description) VALUES (?, ?, ?, ?, ?)";
+                    $insert_items_sql = "INSERT INTO offer_items (offer_id, product_id, name, price, image_url, description) VALUES (?, ?, ?, ?, ?, ?)";
                     $insert_items_stmt = $conn->prepare($insert_items_sql);
-                    $insert_items_stmt->bind_param("isssss", $offer_id, $name, $price, $image_url, $description);
+                    $insert_items_stmt->bind_param("iisdss", $offer_id, $product_id, $name, $price, $image_url, $description);
 
-                    foreach ($_POST['items']['name'] as $index => $name) {
+                    foreach ($_POST['items']['product_id'] as $index => $product_id) {
+                        if (empty($product_id)) continue;
+                        
+                        $name = $_POST['items']['name'][$index];
                         $price = $_POST['items']['price'][$index];
                         $description = $_POST['items']['description'][$index];
                         $image_url = '';
@@ -167,7 +188,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         }
 
                         if (!$insert_items_stmt->execute()) {
-                            throw new Exception("حدث خطأ أثناء إضافة منتج العرض المستقل: " . $insert_items_stmt->error);
+                            throw new Exception("حدث خطأ أثناء إضافة منتج العرض: " . $insert_items_stmt->error);
+                        }
+                        
+                        // إضافة سجل في جدول offer_products إذا كان المنتج موجوداً
+                        if (!empty($product_id)) {
+                            $check_product_sql = "SELECT id FROM offer_products WHERE offer_id = ? AND product_id = ?";
+                            $check_product_stmt = $conn->prepare($check_product_sql);
+                            $check_product_stmt->bind_param("ii", $offer_id, $product_id);
+                            $check_product_stmt->execute();
+                            $check_product_result = $check_product_stmt->get_result();
+                            
+                            if ($check_product_result->num_rows === 0) {
+                                $insert_product_sql = "INSERT INTO offer_products (offer_id, product_id) VALUES (?, ?)";
+                                $insert_product_stmt = $conn->prepare($insert_product_sql);
+                                $insert_product_stmt->bind_param("ii", $offer_id, $product_id);
+                                
+                                if (!$insert_product_stmt->execute()) {
+                                    throw new Exception('حدث خطأ أثناء ربط المنتج بالعرض: ' . $insert_product_stmt->error);
+                                }
+                            }
                         }
                     }
                 }
@@ -195,30 +235,192 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تعديل العرض - لوحة التحكم</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #1e40af;
+            --success-color: #10b981;
+            --info-color: #06b6d4;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --light-color: #f3f4f6;
+            --dark-color: #1f2937;
+            --card-border-radius: 10px;
+            --transition-speed: 0.15s;
+        }
+        
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background-color: #f5f7fb;
+            color: #333;
+            padding-top: 0;
+            margin: 0;
+        }
+        
+        .dashboard-card {
+            border: none;
+            border-radius: var(--card-border-radius);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            transition: all var(--transition-speed) ease;
+            overflow: hidden;
+            height: 100%;
+            margin-bottom: 1.5rem;
+        }
+        
+        .dashboard-card .card-header {
+            background-color: #fff;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 1rem 1.25rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .dashboard-card .card-body {
+            padding: 1.5rem;
+            background-color: #fff;
+        }
+        
+        .btn-dashboard-primary {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            border: none;
+            color: white;
+            font-weight: 500;
+            border-radius: 6px;
+            padding: 0.5rem 1.25rem;
+            transition: all var(--transition-speed) ease;
+        }
+        
+        .btn-dashboard-primary:hover {
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .btn-outline-primary {
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .page-header {
+            background-color: #fff;
+            padding: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+            margin-bottom: 30px;
+        }
+        
+        .breadcrumb {
+            margin-bottom: 0;
+        }
+        
+        .breadcrumb-item a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        .form-control, .form-select {
+            padding: 0.6rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            background-color: #f8fafc;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.15);
+        }
+        
+        label.form-label {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #4b5563;
+        }
+        
+        .offer-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        
+        .offer-item:hover {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+        
+        .remove-item {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.8rem;
+        }
+        
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            color: #6b7280;
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        .back-button:hover {
+            color: var(--primary-color);
+        }
+        
+        .back-button i {
+            margin-left: 5px;
+        }
+    </style>
 </head>
 <body>
-    <?php include '../includes/store_navbar.php'; ?>
+        <?php include '../includes/store_navbar.php'; ?>
     
-    <div class="container py-5">
+    <!-- الشريط العلوي مع مسار التنقل -->
+    <div class="page-header">
+        <div class="container">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house-door"></i> الرئيسية</a></li>
+                    <li class="breadcrumb-item"><a href="offers.php">العروض</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">تعديل العرض</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container">
+        <a href="offers.php" class="back-button">
+            <i class="bi bi-arrow-right"></i>
+            العودة إلى قائمة العروض
+        </a>
+        
         <div class="row">
-            <div class="col-md-3">
-                <?php include '../includes/store_sidebar.php'; ?>
-            </div>
-            
-            <div class="col-md-9">
-                <div class="card">
+            <div class="col-lg-12">
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <span><i class="bi bi-tag-fill me-2 text-primary"></i> تعديل العرض</span>
+                        <span class="badge bg-primary"><?php echo $offer['title']; ?></span>
+                    </div>
                     <div class="card-body">
-                        <h5 class="card-title mb-4">تعديل العرض</h5>
-                        
                         <?php if (!empty($success_msg)): ?>
-                            <div class="alert alert-success"><?php echo $success_msg; ?></div>
+                            <div class="alert alert-success">
+                                <i class="bi bi-check-circle-fill me-2"></i>
+                                <?php echo $success_msg; ?>
+                            </div>
                         <?php endif; ?>
-
+                        
                         <?php if (!empty($error_msg)): ?>
-                            <div class="alert alert-danger"><?php echo $error_msg; ?></div>
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <?php echo $error_msg; ?>
+                            </div>
                         <?php endif; ?>
-
+                        
                         <form method="post" enctype="multipart/form-data">
                             <div class="mb-3">
                                 <label class="form-label">عنوان العرض</label>
@@ -302,16 +504,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                                 <div class="row">
                                                     <div class="col-md-4">
                                                         <div class="mb-3">
-                                                            <label class="form-label">اسم المنتج</label>
-                                                            <input type="text" name="items[name][]" class="form-control" 
-                                                                   value="<?php echo htmlspecialchars($item['name']); ?>" required>
+                                                            <label class="form-label">المنتج</label>
+                                                            <select name="items[product_id][]" class="form-control product-select" required>
+                                                                <option value="">اختر منتجاً</option>
+                                                                <?php 
+                                                                // إعادة المؤشر لبداية نتائج المنتجات
+                                                                $products_result->data_seek(0);
+                                                                while ($product = $products_result->fetch_assoc()): 
+                                                                ?>
+                                                                    <option value="<?php echo $product['id']; ?>" 
+                                                                        data-price="<?php echo $product['price']; ?>"
+                                                                        <?php echo ($item['product_id'] == $product['id']) ? 'selected' : ''; ?>>
+                                                                        <?php echo htmlspecialchars($product['name']); ?> 
+                                                                        (<?php echo number_format($product['price'], 2); ?> ريال)
+                                                                    </option>
+                                                                <?php endwhile; ?>
+                                                            </select>
+                                                            <input type="hidden" name="items[name][]" value="<?php echo htmlspecialchars($item['name']); ?>" class="product-name-input">
                                                         </div>
                                                     </div>
                                                     <div class="col-md-4">
                                                         <div class="mb-3">
-                                                            <label class="form-label">السعر</label>
+                                                            <label class="form-label">السعر بعد الخصم</label>
                                                             <input type="number" step="0.01" name="items[price][]" 
-                                                                   class="form-control" value="<?php echo $item['price']; ?>" required>
+                                                                   class="form-control item-price" value="<?php echo $item['price']; ?>" required>
                                                         </div>
                                                     </div>
                                                     <div class="col-md-4">
@@ -328,7 +544,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                                 <div class="mb-3">
                                                     <label class="form-label">الوصف</label>
                                                     <textarea name="items[description][]" class="form-control" rows="2"><?php 
-                                                        echo htmlspecialchars($item['description']); 
+                                                        echo htmlspecialchars($item['description'] ?? ''); 
                                                     ?></textarea>
                                                 </div>
                                                 <button type="button" class="btn btn-danger btn-sm remove-item">
@@ -357,14 +573,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                     <div class="row">
                                         <div class="col-md-4">
                                             <div class="mb-3">
-                                                <label class="form-label">اسم المنتج</label>
-                                                <input type="text" name="items[name][]" class="form-control" required>
+                                                <label class="form-label">المنتج</label>
+                                                <select name="items[product_id][]" class="form-control product-select" required>
+                                                    <option value="">اختر منتجاً</option>
+                                                    <?php 
+                                                    // إعادة المؤشر لبداية نتائج المنتجات
+                                                    $products_result->data_seek(0);
+                                                    while ($product = $products_result->fetch_assoc()): 
+                                                    ?>
+                                                        <option value="<?php echo $product['id']; ?>" data-price="<?php echo $product['price']; ?>">
+                                                            <?php echo htmlspecialchars($product['name']); ?> 
+                                                            (<?php echo number_format($product['price'], 2); ?> ريال)
+                                                        </option>
+                                                    <?php endwhile; ?>
+                                                </select>
+                                                <input type="hidden" name="items[name][]" class="product-name-input">
                                             </div>
                                         </div>
                                         <div class="col-md-4">
                                             <div class="mb-3">
-                                                <label class="form-label">السعر</label>
-                                                <input type="number" step="0.01" name="items[price][]" class="form-control" required>
+                                                <label class="form-label">السعر بعد الخصم</label>
+                                                <input type="number" step="0.01" name="items[price][]" class="form-control item-price" required>
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -390,11 +619,44 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             const container = document.getElementById('offer-items-container');
                             const template = document.getElementById('offer-item-template');
                             const addButton = document.getElementById('add-item');
+                            const discountInput = document.querySelector('input[name="discount_percentage"]');
+
+                            // تحديث اسم المنتج والسعر عند اختيار منتج
+                            function setupProductSelect(selectElement) {
+                                selectElement.addEventListener('change', function() {
+                                    const selectedOption = this.options[this.selectedIndex];
+                                    const nameInput = this.closest('.offer-item').querySelector('.product-name-input');
+                                    const priceInput = this.closest('.offer-item').querySelector('.item-price');
+                                    
+                                    if (this.value) {
+                                        // تحديث اسم المنتج
+                                        nameInput.value = selectedOption.textContent.trim();
+                                        
+                                        // حساب السعر بعد الخصم
+                                        const originalPrice = parseFloat(selectedOption.getAttribute('data-price'));
+                                        const discount = parseFloat(discountInput.value) || 0;
+                                        
+                                        if (!isNaN(originalPrice) && !isNaN(discount) && discount > 0) {
+                                            const discountedPrice = originalPrice - (originalPrice * discount / 100);
+                                            priceInput.value = discountedPrice.toFixed(2);
+                                        } else {
+                                            priceInput.value = originalPrice.toFixed(2);
+                                        }
+                                    } else {
+                                        nameInput.value = '';
+                                        priceInput.value = '';
+                                    }
+                                });
+                            }
 
                             // إضافة منتج جديد
                             addButton.addEventListener('click', function() {
                                 const newItem = template.content.cloneNode(true);
                                 container.appendChild(newItem);
+                                
+                                // إعداد القائمة المنسدلة للمنتج الجديد
+                                const newProductSelect = container.lastElementChild.querySelector('.product-select');
+                                setupProductSelect(newProductSelect);
                             });
 
                             // حذف منتج
@@ -406,6 +668,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                         item.remove();
                                     }
                                 }
+                            });
+                            
+                            // إعداد القوائم المنسدلة الموجودة
+                            document.querySelectorAll('.product-select').forEach(function(select) {
+                                setupProductSelect(select);
+                            });
+                            
+                            // تحديث الأسعار عند تغيير نسبة الخصم
+                            discountInput.addEventListener('change', function() {
+                                const discount = parseFloat(this.value) || 0;
+                                
+                                document.querySelectorAll('.product-select').forEach(function(select) {
+                                    if (select.value) {
+                                        const priceInput = select.closest('.offer-item').querySelector('.item-price');
+                                        const originalPrice = parseFloat(select.options[select.selectedIndex].getAttribute('data-price'));
+                                        
+                                        if (!isNaN(originalPrice) && !isNaN(discount) && discount > 0) {
+                                            const discountedPrice = originalPrice - (originalPrice * discount / 100);
+                                            priceInput.value = discountedPrice.toFixed(2);
+                                        }
+                                    }
+                                });
                             });
                         });
                         </script>

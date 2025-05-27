@@ -39,6 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = trim($_POST['phone']);
     $description = trim($_POST['description']);
     $city = trim($_POST['city']);
+    $facebook_url = trim($_POST['facebook_url']);
+    $twitter_url = trim($_POST['twitter_url']);
+    $instagram_url = trim($_POST['instagram_url']);
+    $whatsapp = trim($_POST['whatsapp']);
     $selected_categories = isset($_POST['categories']) ? $_POST['categories'] : [];
 
     $errors = [];
@@ -73,12 +77,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        // تحديث معلومات المتجر
-        $update_query = "UPDATE stores SET name = ?, email = ?, phone = ?, address = ?, city = ?, description = ? WHERE id = ?";
-        $stmt = $conn->prepare($update_query);
-        $stmt->bind_param("ssssssi", $name, $email, $phone, $address, $city, $description, $store_id);
+        // بدء المعاملة لضمان تحديث جميع البيانات بشكل متزامن
+        $conn->begin_transaction();
         
-        if ($stmt->execute()) {
+        try {
+            // تحديث معلومات المتجر
+            $update_query = "UPDATE stores SET name = ?, email = ?, phone = ?, address = ?, city = ?, description = ?, facebook_url = ?, twitter_url = ?, instagram_url = ?, whatsapp = ? WHERE id = ?";
+            $stmt = $conn->prepare($update_query);
+            $stmt->bind_param("ssssssssssi", $name, $email, $phone, $address, $city, $description, $facebook_url, $twitter_url, $instagram_url, $whatsapp, $store_id);
+            $stmt->execute();
+            
+            // تحديث البريد الإلكتروني في جدول المستخدمين إذا كان هناك user_id مرتبط بالمتجر
+            $get_user_id = $conn->prepare("SELECT user_id FROM stores WHERE id = ?");
+            $get_user_id->bind_param("i", $store_id);
+            $get_user_id->execute();
+            $user_result = $get_user_id->get_result();
+            $user_data = $user_result->fetch_assoc();
+            
+            if ($user_data && !empty($user_data['user_id'])) {
+                $user_id = $user_data['user_id'];
+                $update_user = $conn->prepare("UPDATE users SET email = ? WHERE id = ?");
+                $update_user->bind_param("si", $email, $user_id);
+                $update_user->execute();
+            }
+            
+            // تأكيد المعاملة
+            $conn->commit();
+            
             // معالجة تحميل الشعار إذا تم تحديده
             if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
                 $logo_name = $_FILES['logo']['name'];
@@ -103,8 +128,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['success_message'] = "تم تحديث معلومات المتجر بنجاح";
             header("Location: profile.php");
             exit();
-        } else {
-            $errors[] = "حدث خطأ أثناء تحديث المعلومات";
+        } catch (Exception $e) {
+            // التراجع عن المعاملة في حالة حدوث خطأ
+            $conn->rollback();
+            $errors[] = "حدث خطأ أثناء تحديث المعلومات: " . $e->getMessage();
+        
         }
     }
 }
@@ -267,8 +295,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <div class="mb-3">
                                         <label for="city" class="form-label">المدينة</label>
                                         <input type="text" class="form-control" id="city" name="city" 
-                                               value="<?php echo htmlspecialchars($store['city']); ?>"
+                                               value="<?php echo isset($store['city']) ? htmlspecialchars($store['city']) : ''; ?>"
                                                required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <h5 class="mb-3">روابط التواصل الاجتماعي</h5>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="facebook_url" class="form-label">
+                                                <i class="bi bi-facebook me-2 text-primary"></i>فيسبوك
+                                            </label>
+                                            <input type="url" class="form-control" id="facebook_url" name="facebook_url" 
+                                                   placeholder="https://facebook.com/your-page"
+                                                   value="<?php echo isset($store['facebook_url']) ? htmlspecialchars($store['facebook_url']) : ''; ?>">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="twitter_url" class="form-label">
+                                                <i class="bi bi-twitter me-2 text-info"></i>تويتر
+                                            </label>
+                                            <input type="url" class="form-control" id="twitter_url" name="twitter_url" 
+                                                   placeholder="https://twitter.com/your-handle"
+                                                   value="<?php echo isset($store['twitter_url']) ? htmlspecialchars($store['twitter_url']) : ''; ?>">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="instagram_url" class="form-label">
+                                                <i class="bi bi-instagram me-2 text-danger"></i>انستغرام
+                                            </label>
+                                            <input type="url" class="form-control" id="instagram_url" name="instagram_url" 
+                                                   placeholder="https://instagram.com/your-profile"
+                                                   value="<?php echo isset($store['instagram_url']) ? htmlspecialchars($store['instagram_url']) : ''; ?>">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="whatsapp" class="form-label">
+                                                <i class="bi bi-whatsapp me-2 text-success"></i>واتساب
+                                            </label>
+                                            <input type="text" class="form-control" id="whatsapp" name="whatsapp" 
+                                                   placeholder="966xxxxxxxxx"
+                                                   value="<?php echo isset($store['whatsapp']) ? htmlspecialchars($store['whatsapp']) : ''; ?>">
+                                            <div class="form-text">أدخل رقم الواتساب بدون علامة + (مثال: 966xxxxxxxxx)</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

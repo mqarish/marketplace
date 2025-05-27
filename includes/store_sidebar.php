@@ -9,9 +9,6 @@ if (!isset($_SESSION['store_id'])) {
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <div class="card mb-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">القائمة الرئيسية</h5>
-    </div>
     <div class="list-group list-group-flush">
         <a href="index.php" class="list-group-item list-group-item-action <?php echo $current_page === 'index.php' ? 'active' : ''; ?>">
             <i class="bi bi-speedometer2 me-2"></i>لوحة التحكم
@@ -33,6 +30,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </a>
         <a href="orders.php" class="list-group-item list-group-item-action <?php echo $current_page === 'orders.php' ? 'active' : ''; ?>">
             <i class="bi bi-cart me-2"></i>الطلبات
+        </a>
+        <a href="settings.php" class="list-group-item list-group-item-action <?php echo $current_page === 'settings.php' ? 'active' : ''; ?>">
+            <i class="bi bi-gear me-2"></i>الإعدادات
         </a>
     </div>
 </div>

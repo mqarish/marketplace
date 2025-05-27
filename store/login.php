@@ -40,8 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 // التحقق من حالة المتجر
                 if ($store['status'] === 'pending') {
                     $errors[] = "عذراً، متجرك في انتظار الموافقة من قبل الإدارة";
-                } elseif ($store['status'] === 'blocked') {
-                    $errors[] = "عذراً، متجرك محظور. يرجى التواصل مع الإدارة";
+                } elseif ($store['status'] === 'blocked' || $store['status'] === 'inactive') {
+                    $errors[] = "عذراً، تم تعطيل متجرك. يرجى التواصل مع إدارة الموقع للمزيد من المعلومات";
                 } else {
                     // تسجيل الدخول
                     $_SESSION['store_id'] = $store['id'];
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>تسجيل الدخول - المتجر</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
@@ -89,18 +89,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             background-position: center;
             background-repeat: no-repeat;
             min-height: 100vh;
+            width: 100%;
             display: flex;
             align-items: center;
+            justify-content: center;
             position: relative;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
         }
 
         body::before {
             content: '';
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
+            width: 100%;
+            height: 100%;
             background: linear-gradient(135deg, 
                 rgba(0, 0, 0, 0.6) 0%, 
                 rgba(0, 0, 0, 0.5) 50%, 
@@ -120,42 +127,52 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         .brand-logo {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 10px;
+            right: 10px;
             z-index: 3;
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
-            padding: 15px 25px;
-            border-radius: 15px;
+            padding: 8px 15px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
         
         .brand-logo i {
-            font-size: 2rem;
+            font-size: 1.5rem;
             color: white;
         }
         
         .brand-logo span {
             color: white;
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             font-weight: 600;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        @media (max-width: 576px) {
+            .brand-logo i {
+                font-size: 1.2rem;
+            }
+            
+            .brand-logo span {
+                font-size: 1rem;
+            }
         }
         
         .login-container {
             background: rgba(255, 255, 255, 0.15);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            padding: 2.5rem;
+            padding: 1.5rem;
             border-radius: 15px;
             box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
             border: 1px solid rgba(255, 255, 255, 0.18);
-            margin: 2rem auto;
+            margin: 1rem auto;
             max-width: 450px;
-            width: 100%;
+            width: 90%;
             animation: fadeIn 0.5s ease-out;
         }
         
@@ -169,6 +186,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             font-weight: 600;
             margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-size: 1.5rem;
+        }
+        
+        @media (max-width: 576px) {
+            .login-header h2 {
+                font-size: 1.2rem;
+            }
         }
         
         .login-header p {
@@ -179,11 +203,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         .form-control {
             background: rgba(255, 255, 255, 0.2);
-            padding: 0.75rem 1rem;
+            padding: 0.6rem 0.8rem;
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 8px;
             color: white;
             height: auto;
+            font-size: 0.95rem;
+        }
+        
+        @media (max-width: 576px) {
+            .form-control {
+                padding: 0.5rem 0.7rem;
+                font-size: 0.9rem;
+            }
         }
         
         .form-control::placeholder {
@@ -201,17 +233,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             background: rgba(255, 255, 255, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.2);
             color: white;
+            padding: 0.6rem 0.8rem;
+        }
+        
+        @media (max-width: 576px) {
+            .input-group-text {
+                padding: 0.5rem 0.7rem;
+            }
         }
         
         .btn-primary {
-            background: rgba(37, 99, 235, 0.8);
-            border: none;
-            padding: 0.75rem 1rem;
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            padding: 0.6rem 1.2rem;
             font-weight: 500;
-            border-radius: 8px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
             transition: all 0.3s ease;
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
+            font-size: 0.95rem;
+        }
+        
+        @media (max-width: 576px) {
+            .btn-primary {
+                padding: 0.5rem 1rem;
+                font-size: 0.9rem;
+            }
         }
         
         .btn-primary:hover {
@@ -329,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="main-content">
         <div class="container">
             <div class="row justify-content-center">
-                <div class="col-md-12">
+                <div class="col-12">
                     <div class="login-container">
                         <div class="login-header">
                             <h2>مرحباً بك في بوابة المتاجر</h2>
@@ -347,12 +393,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <?php endif; ?>
 
                         <?php if (isset($_SESSION['error'])): ?>
-                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <div class="alert alert-danger">
                                 <?php 
                                 echo $_SESSION['error'];
                                 unset($_SESSION['error']);
                                 ?>
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                             </div>
                         <?php endif; ?>
 
@@ -360,7 +405,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <div class="alert alert-danger">
                                 <ul class="mb-0">
                                     <?php foreach ($errors as $error): ?>
-                                        <li><?php echo htmlspecialchars($error); ?></li>
+                                        <li><?php echo $error; ?></li>
                                     <?php endforeach; ?>
                                 </ul>
                             </div>

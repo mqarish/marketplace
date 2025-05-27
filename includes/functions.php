@@ -50,26 +50,30 @@ function isValidImageType($file) {
 
 // دالة لرفع الصورة
 function uploadImage($file, $upload_path) {
+    // تعديل الدالة لتتوافق مع ما تتوقعه صفحة edit-offer.php
     $result = [
-        'success' => false,
+        'status' => 'success',
         'message' => '',
-        'filename' => ''
+        'path' => ''
     ];
 
     // التحقق من وجود خطأ في رفع الملف
     if ($file['error'] !== UPLOAD_ERR_OK) {
+        $result['status'] = 'error';
         $result['message'] = 'حدث خطأ أثناء رفع الملف';
         return $result;
     }
 
     // التحقق من نوع الملف
     if (!isValidImageType($file)) {
+        $result['status'] = 'error';
         $result['message'] = 'نوع الملف غير مدعوم. يرجى اختيار صورة بامتداد JPG أو PNG أو GIF';
         return $result;
     }
 
     // التحقق من حجم الملف (5 ميجابايت كحد أقصى)
     if ($file['size'] > 5 * 1024 * 1024) {
+        $result['status'] = 'error';
         $result['message'] = 'حجم الملف كبير جداً. الحد الأقصى هو 5 ميجابايت';
         return $result;
     }
@@ -82,6 +86,7 @@ function uploadImage($file, $upload_path) {
     // التأكد من وجود المجلد
     if (!file_exists($upload_path)) {
         if (!mkdir($upload_path, 0777, true)) {
+            $result['status'] = 'error';
             $result['message'] = 'فشل في إنشاء مجلد الرفع';
             return $result;
         }
@@ -89,6 +94,7 @@ function uploadImage($file, $upload_path) {
 
     // نقل الملف إلى المجلد المحدد
     if (!move_uploaded_file($file['tmp_name'], $target_path)) {
+        $result['status'] = 'error';
         $result['message'] = 'فشل في رفع الملف';
         return $result;
     }
@@ -96,8 +102,10 @@ function uploadImage($file, $upload_path) {
     // تعيين صلاحيات الملف
     chmod($target_path, 0777);
 
-    $result['success'] = true;
-    $result['filename'] = $file_name;
+    // تعيين مسار الصورة النسبي (بدون ../)
+    $relative_path = str_replace('../', '', $upload_path) . $file_name;
+    $result['path'] = $relative_path;
+    
     return $result;
 }
 

@@ -14,115 +14,32 @@ $store_id = $_SESSION['store_id'];
 // معالجة البحث والتصفية
 $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
 $status_filter = isset($_GET['status']) ? $_GET['status'] : 'all';
-$category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
 
-// جلب تصنيفات المنتجات
-$categories_sql = "SELECT * FROM product_categories WHERE store_id = ? ORDER BY name ASC";
-$categories_stmt = $conn->prepare($categories_sql);
-$categories_stmt->bind_param("i", $store_id);
-$categories_stmt->execute();
-$categories_result = $categories_stmt->get_result();
-$categories = [];
-while ($category = $categories_result->fetch_assoc()) {
-    $categories[$category['id']] = $category;
+// بناء استعلام المنتجات
+$sql = "SELECT * FROM products WHERE store_id = ?";
+$params = [$store_id];
+$types = "i";
+
+if (!empty($search)) {
+    $sql .= " AND (name LIKE ? OR description LIKE ?)";
+    $search_param = "%$search%";
+    $params[] = $search_param;
+    $params[] = $search_param;
+    $types .= "ss";
 }
 
-// نهج جديد للبحث - استخدام استعلامات منفصلة للحصول على البيانات
-
-// 1. جلب جميع المنتجات للمتجر الحالي
-try {
-    $base_sql = "SELECT * FROM products WHERE store_id = ?";
-    $stmt = $conn->prepare($base_sql);
-    
-    if ($stmt === false) {
-        throw new Exception("Error preparing base query: " . $conn->error);
-    }
-    
-    $stmt->bind_param("i", $store_id);
-    $stmt->execute();
-    $products_result = $stmt->get_result();
-    $all_products = [];
-    
-    // تحويل النتائج إلى مصفوفة
-    while ($row = $products_result->fetch_assoc()) {
-        $all_products[$row['id']] = $row;
-    }
-    
-    // 2. جلب التصنيفات للمنتجات
-    $categories_data = [];
-    if (!empty($all_products)) {
-        $cat_sql = "SELECT * FROM product_categories WHERE store_id = ?";
-        $cat_stmt = $conn->prepare($cat_sql);
-        $cat_stmt->bind_param("i", $store_id);
-        $cat_stmt->execute();
-        $cat_result = $cat_stmt->get_result();
-        
-        while ($cat = $cat_result->fetch_assoc()) {
-            $categories_data[$cat['id']] = $cat;
-        }
-        
-        // إضافة اسم التصنيف إلى كل منتج
-        foreach ($all_products as $id => $product) {
-            if (isset($product['category_id']) && isset($categories_data[$product['category_id']])) {
-                $all_products[$id]['category_name'] = $categories_data[$product['category_id']]['name'];
-            } else {
-                $all_products[$id]['category_name'] = '';
-            }
-        }
-    }
-    
-    // 3. تطبيق الفلترة على النتائج باستخدام PHP
-    $filtered_products = [];
-    
-    foreach ($all_products as $product) {
-        $include_product = true;
-        
-        // فلترة البحث
-        if (!empty($search)) {
-            $search_term = strtolower($search);
-            $name_match = stripos(strtolower($product['name']), $search_term) !== false;
-            $desc_match = isset($product['description']) && stripos(strtolower($product['description']), $search_term) !== false;
-            
-            if (!$name_match && !$desc_match) {
-                $include_product = false;
-            }
-        }
-        
-        // فلترة الحالة
-        if ($status_filter != 'all' && $product['status'] != $status_filter) {
-            $include_product = false;
-        }
-        
-        // فلترة التصنيف
-        if ($category_filter > 0 && $product['category_id'] != $category_filter) {
-            $include_product = false;
-        }
-        
-        if ($include_product) {
-            $filtered_products[] = $product;
-        }
-    }
-    
-    // 4. ترتيب النتائج حسب تاريخ الإنشاء
-    usort($filtered_products, function($a, $b) {
-        return strtotime($b['created_at']) - strtotime($a['created_at']);
-    });
-    
-    // إنشاء كائن نتيجة مخصص للعرض
-    $result = new stdClass();
-    $result->num_rows = count($filtered_products);
-    $result->filtered_products = $filtered_products;
-    $query_error = false;
-    
-} catch (Exception $e) {
-    // تسجيل الخطأ وإنشاء نتيجة فارغة
-    error_log("Error in products.php: " . $e->getMessage());
-    $result = new stdClass();
-    $result->num_rows = 0;
-    $result->filtered_products = [];
-    $query_error = true;
-    $_SESSION['error'] = "حدث خطأ أثناء جلب المنتجات. يرجى المحاولة مرة أخرى لاحقًا.";
+if ($status_filter != 'all') {
+    $sql .= " AND status = ?";
+    $params[] = $status_filter;
+    $types .= "s";
 }
+
+$sql .= " ORDER BY created_at DESC";
+
+$stmt = $conn->prepare($sql);
+$stmt->bind_param($types, ...$params);
+$stmt->execute();
+$result = $stmt->get_result();
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -250,38 +167,12 @@ try {
         }
         
         /* تنسيق صور المنتجات */
-        .product-image-container {
+        .product-img {
             width: 60px;
             height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            background-color: #f9f9f9;
-            position: relative;
-        }
-        
-        .product-img {
-            width: 100%;
-            height: 100%;
             object-fit: cover;
             border-radius: 8px;
-            display: block !important; /* تأكيد العرض */
-        }
-        
-        /* للتأكد من عرض الصور بشكل صحيح */
-        .product-img-bg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            z-index: 1;
+            border: 1px solid #e5e7eb;
         }
         
         .product-img-placeholder {
@@ -398,31 +289,24 @@ try {
                 <form method="GET" class="row g-3 mb-0">
                     <div class="col-md-6 col-lg-8">
                         <div class="input-group">
-                            <input type="text" class="form-control" placeholder="البحث عن منتج..." name="search" value="<?php echo htmlspecialchars($search); ?>">
-                            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input type="text" name="search" class="form-control border-start-0" placeholder="بحث عن منتج..." value="<?php echo htmlspecialchars($search); ?>">
+                            <button class="btn btn-primary" type="submit">بحث</button>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <select class="form-select" name="status" onchange="this.form.submit()">
-                            <option value="all" <?php echo $status_filter == 'all' ? 'selected' : ''; ?>>جميع الحالات</option>
-                            <option value="active" <?php echo $status_filter == 'active' ? 'selected' : ''; ?>>منتجات نشطة</option>
-                            <option value="inactive" <?php echo $status_filter == 'inactive' ? 'selected' : ''; ?>>منتجات غير نشطة</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <select class="form-select" name="category" onchange="this.form.submit()">
-                            <option value="0">جميع التصنيفات</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?php echo $cat['id']; ?>" <?php echo $category_filter == $cat['id'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($cat['name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-2 text-end">
-                        <a href="add-product.php" class="btn btn-dashboard-primary w-100">
-                            <i class="bi bi-plus-lg me-1"></i> إضافة منتج
-                        </a>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="bi bi-funnel text-muted"></i>
+                            </span>
+                            <select name="status" class="form-select border-start-0" onchange="this.form.submit()">
+                                <option value="all" <?php echo $status_filter == 'all' ? 'selected' : ''; ?>>جميع الحالات</option>
+                                <option value="active" <?php echo $status_filter == 'active' ? 'selected' : ''; ?>>نشط</option>
+                                <option value="inactive" <?php echo $status_filter == 'inactive' ? 'selected' : ''; ?>>غير نشط</option>
+                            </select>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -432,32 +316,35 @@ try {
         <div class="dashboard-card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">قائمة المنتجات</h5>
-                <span class="badge bg-primary"><?php echo ($result && $result->num_rows) ? $result->num_rows : 0; ?> منتج</span>
+                <span class="badge bg-primary"><?php echo $result->num_rows; ?> منتج</span>
             </div>
             <div class="card-body p-0">
-                <?php if ($result && $result->num_rows > 0): ?>
+                <?php if ($result->num_rows > 0): ?>
                     <div class="table-responsive">
                         <table class="table products-table mb-0">
                             <thead>
                                 <tr>
-                                    <th width="60">الصورة</th>
-                                    <th>اسم المنتج</th>
-                                    <th>التصنيف</th>
+                                    <th>الصورة</th>
+                                    <th>المنتج</th>
                                     <th>السعر</th>
-                                    <th>الحالة</th>
                                     <th>تاريخ الإضافة</th>
-                                    <th width="120">الإجراءات</th>
+                                    <th>الحالة</th>
+                                    <th>الإجراءات</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($result->filtered_products as $row): ?>
-                                    <tr data-product-id="<?php echo $row['id']; ?>">
+                                <?php while ($row = $result->fetch_assoc()): ?>
+                                    <tr>
                                         <td>
-                                            <div class="product-image-container">
+                                            <?php if (!empty($row['image']) && file_exists('../uploads/products/' . $row['image'])): ?>
+                                                <img src="../uploads/products/<?php echo $row['image']; ?>" 
+                                                     alt="<?php echo htmlspecialchars($row['name']); ?>"
+                                                     class="product-img">
+                                            <?php else: ?>
                                                 <div class="product-img-placeholder">
                                                     <i class="bi bi-image"></i>
                                                 </div>
-                                            </div>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <div class="product-name fw-medium"><?php echo htmlspecialchars($row['name']); ?></div>
@@ -468,35 +355,7 @@ try {
                                                 ?>
                                             </div>
                                         </td>
-                                        <td>
-                                            <?php if (!empty($row['category_name'])): ?>
-                                                <span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['category_name']); ?></span>
-                                            <?php else: ?>
-                                                <span class="text-muted">-</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <?php if (isset($row['hide_price']) && $row['hide_price'] == 1): ?>
-                                                <span class="badge bg-secondary">اتصل للسعر</span>
-                                            <?php else: ?>
-                                                <?php 
-                                                $currency_symbol = 'ر.س'; // افتراضياً ريال سعودي
-                                                if (isset($row['currency'])) {
-                                                    switch ($row['currency']) {
-                                                        case 'YER':
-                                                            $currency_symbol = 'ر.ي'; // ريال يمني
-                                                            break;
-                                                        case 'USD':
-                                                            $currency_symbol = '$'; // دولار أمريكي
-                                                            break;
-                                                        default:
-                                                            $currency_symbol = 'ر.س'; // ريال سعودي
-                                                    }
-                                                }
-                                                echo number_format($row['price'], 2) . ' ' . $currency_symbol; 
-                                                ?>
-                                            <?php endif; ?>
-                                        </td>
+                                        <td><?php echo number_format($row['price'], 2); ?> ر.س</td>
                                         <td><?php echo date('Y-m-d', strtotime($row['created_at'])); ?></td>
                                         <td>
                                             <?php 
@@ -513,7 +372,7 @@ try {
                                                 <a href="edit-product.php?id=<?php echo $row['id']; ?>" class="btn-action edit" title="تعديل">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </a>
-                                                <a href="../customer/product-details.php?id=<?php echo $row['id']; ?>" target="_blank" class="btn-action view" title="عرض">
+                                                <a href="../customer/product.php?id=<?php echo $row['id']; ?>" target="_blank" class="btn-action view" title="عرض">
                                                     <i class="bi bi-eye"></i>
                                                 </a>
                                                 <button type="button" class="btn-action delete" title="حذف" onclick="deleteProduct(<?php echo $row['id']; ?>)">
@@ -522,17 +381,14 @@ try {
                                             </div>
                                         </td>
                                     </tr>
-                                <?php endforeach; ?>
+                                <?php endwhile; ?>
                             </tbody>
                         </table>
                     </div>
                 <?php else: ?>
                     <div class="empty-state">
                         <i class="bi bi-box"></i>
-                        <?php if (isset($query_error) && $query_error): ?>
-                            <h4>حدث خطأ أثناء جلب المنتجات</h4>
-                            <p>يرجى المحاولة مرة أخرى لاحقًا أو تعديل معايير البحث</p>
-                        <?php elseif (!empty($search)): ?>
+                        <?php if (!empty($search)): ?>
                             <h4>لا توجد نتائج تطابق بحثك</h4>
                             <p>حاول استخدام كلمات بحث مختلفة أو تصفية أخرى</p>
                             <a href="products.php" class="btn btn-outline-primary">عرض جميع المنتجات</a>
@@ -579,77 +435,6 @@ try {
         var deleteModal = new bootstrap.Modal(document.getElementById('deleteProductModal'));
         deleteModal.show();
     }
-
-    // استخدام AJAX لحذف المنتج
-    document.getElementById('deleteProductForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        var productId = document.getElementById('product_id').value;
-        var formData = new FormData();
-        formData.append('product_id', productId);
-
-        fetch('delete-product.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            // إغلاق مربع الحوار
-            var deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteProductModal'));
-            deleteModal.hide();
-
-            if (data.success) {
-                // إنشاء عنصر التنبيه
-                var alertDiv = document.createElement('div');
-                alertDiv.className = 'alert alert-success alert-dismissible fade show';
-                alertDiv.innerHTML = `
-                    <i class="bi bi-check-circle-fill me-2"></i>
-                    ${data.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                `;
-
-                // إضافة التنبيه إلى أعلى الصفحة
-                var container = document.querySelector('.container');
-                container.insertBefore(alertDiv, container.firstChild);
-
-                // حذف صف المنتج من الجدول
-                var productRow = document.querySelector(`tr[data-product-id="${productId}"]`);
-                if (productRow) {
-                    productRow.remove();
-                } else {
-                    // إعادة تحميل الصفحة إذا لم يتم العثور على الصف
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                }
-            } else {
-                // إظهار رسالة خطأ
-                var alertDiv = document.createElement('div');
-                alertDiv.className = 'alert alert-danger alert-dismissible fade show';
-                alertDiv.innerHTML = `
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    ${data.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                `;
-
-                var container = document.querySelector('.container');
-                container.insertBefore(alertDiv, container.firstChild);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            // إظهار رسالة خطأ عامة
-            var alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-danger alert-dismissible fade show';
-            alertDiv.innerHTML = `
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                حدث خطأ أثناء حذف المنتج. الرجاء المحاولة مرة أخرى.
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            `;
-
-            var container = document.querySelector('.container');
-            container.insertBefore(alertDiv, container.firstChild);
-        });
-    });
     </script>
 </body>
 </html>
