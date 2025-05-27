@@ -14,59 +14,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     
     if ($store_id > 0) {
         switch ($_POST['action']) {
-            case 'change_status':
-                $status = $_POST['status'];
-                
+            case 'reset_password':
                 // بدء المعاملة
                 $conn->begin_transaction();
                 
                 try {
-                    // تحديث حالة المتجر في جدول stores
-                    $stmt = $conn->prepare("UPDATE stores SET status = ? WHERE id = ?");
-                    $stmt->bind_param("si", $status, $store_id);
+                    // الحصول على user_id للمتجر
+                    $stmt = $conn->prepare("SELECT user_id FROM stores WHERE id = ?");
+                    $stmt->bind_param("i", $store_id);
                     $stmt->execute();
+                    $result = $stmt->get_result();
+                    $store = $result->fetch_assoc();
+                    $stmt->close();
                     
-                    // تحديث حالة المستخدم في جدول users
-                    $stmt2 = $conn->prepare("UPDATE users u 
-                                           JOIN stores s ON u.id = s.user_id 
-                                           SET u.status = ? 
-                                           WHERE s.id = ?");
-                    $stmt2->bind_param("si", $status, $store_id);
-                    $stmt2->execute();
-                    
-                    // تأكيد المعاملة
-                    $conn->commit();
-                    $_SESSION['success'] = "تم تحديث حالة المتجر بنجاح";
+                    if ($store) {
+                        // إنشاء كلمة مرور جديدة عشوائية
+                        $new_password = bin2hex(random_bytes(4)); // 8 characters
+                        $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+                        
+                        // تحديث كلمة المرور في جدول stores
+                        $stmt1 = $conn->prepare("UPDATE stores SET password = ? WHERE id = ?");
+                        $stmt1->bind_param("si", $hashed_password, $store_id);
+                        $stmt1->execute();
+                        $stmt1->close();
+                        
+                        // تحديث كلمة المرور في جدول users إذا كان هناك user_id
+                        if (!empty($store['user_id'])) {
+                            $stmt2 = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+                            $stmt2->bind_param("si", $hashed_password, $store['user_id']);
+                            $stmt2->execute();
+                            $stmt2->close();
+                        }
+                        
+                        // تأكيد المعاملة
+                        $conn->commit();
+                        $_SESSION['success'] = "تم إعادة تعيين كلمة المرور بنجاح. كلمة المرور الجديدة هي: " . $new_password;
+                    } else {
+                        throw new Exception("لم يتم العثور على المتجر");
+                    }
                 } catch (Exception $e) {
                     // التراجع عن المعاملة في حالة حدوث خطأ
                     $conn->rollback();
-                    $_SESSION['error'] = "حدث خطأ أثناء تحديث حالة المتجر: " . $e->getMessage();
-                }
-                break;
-
-            case 'reset_password':
-                // الحصول على user_id للمتجر
-                $stmt = $conn->prepare("SELECT user_id FROM stores WHERE id = ?");
-                $stmt->bind_param("i", $store_id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                $store = $result->fetch_assoc();
-                $stmt->close();
-                
-                if ($store && $store['user_id']) {
-                    // إنشاء كلمة مرور جديدة عشوائية
-                    $new_password = bin2hex(random_bytes(4)); // 8 characters
-                    $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-                    
-                    $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-                    $stmt->bind_param("si", $hashed_password, $store['user_id']);
-                    
-                    if ($stmt->execute()) {
-                        $_SESSION['success'] = "تم إعادة تعيين كلمة المرور بنجاح. كلمة المرور الجديدة هي: " . $new_password;
-                    } else {
-                        $_SESSION['error'] = "حدث خطأ أثناء إعادة تعيين كلمة المرور";
-                    }
-                    $stmt->close();
+                    $_SESSION['error'] = "حدث خطأ أثناء إعادة تعيين كلمة المرور: " . $e->getMessage();
                 }
                 break;
         }
@@ -196,8 +185,16 @@ try {
                             <?php else: ?>
                                 <?php foreach ($stores as $index => $store): 
                                     $status = $store['store_status'];
-                                    $status_class = $status === 'active' ? 'bg-success' : 'bg-warning';
-                                    $status_text = $status === 'active' ? 'نشط' : 'غير نشط';
+                                    $status_class = $status === 'active' ? 'bg-success' : ($status === 'suspended' ? 'bg-warning' : 'bg-secondary');
+                                    
+                                    if ($status === 'active') {
+                                        $status_text = 'نشط';
+                                    } elseif ($status === 'suspended') {
+                                        $status_text = 'معطل';
+                                    } else {
+                                        $status_text = 'قيد المراجعة';
+                                    }
+                                    
                                     $logo_path = !empty($store['logo']) ? '../uploads/stores/' . $store['logo'] : '../assets/images/default-store.png';
                                 ?>
                                     <tr>
@@ -226,6 +223,10 @@ try {
                                             <span class="badge <?php echo $status_class; ?>">
                                                 <?php echo $status_text; ?>
                                             </span>
+                                            <?php if ($status === 'suspended'): ?>
+                                                <br>
+                                                <small class="text-muted">المتجر قيد التنشيط مرة أخرى</small>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <div class="btn-group">
@@ -233,11 +234,11 @@ try {
                                                    class="btn btn-sm btn-primary">
                                                     <i class="fas fa-edit"></i> تعديل
                                                 </a>
-                                                <button type="button" 
-                                                        class="btn btn-sm <?php echo $status === 'active' ? 'btn-success' : 'btn-warning'; ?>" 
-                                                        onclick="changeStatus(<?php echo $store['id']; ?>, '<?php echo $status === 'active' ? 'inactive' : 'active'; ?>')">
-                                                    <?php echo $status === 'active' ? 'تعطيل' : 'تفعيل'; ?>
-                                                </button>
+                                                <a href="change_store_status.php?store_id=<?php echo $store['id']; ?>&status=<?php echo $status === 'active' ? 'inactive' : 'active'; ?>" 
+                                                   class="btn btn-sm <?php echo $status === 'active' ? 'btn-danger' : 'btn-success'; ?>" 
+                                                   onclick="return confirm('هل أنت متأكد من <?php echo $status === 'active' ? 'تعطيل' : 'تفعيل'; ?> هذا المتجر؟');">
+                                                     <?php echo $status === 'active' ? 'تعطيل' : 'تفعيل'; ?>
+                                                 </a>
                                                 <button type="button" 
                                                         class="btn btn-sm btn-info" 
                                                         onclick="resetPassword(<?php echo $store['id']; ?>)">
@@ -287,20 +288,7 @@ try {
     <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    function changeStatus(storeId, newStatus) {
-        const action = newStatus === 'active' ? 'تنشيط' : 'تعطيل';
-        if (confirm(`هل أنت متأكد من ${action} هذا المتجر؟`)) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.innerHTML = `
-                <input type="hidden" name="action" value="change_status">
-                <input type="hidden" name="store_id" value="${storeId}">
-                <input type="hidden" name="status" value="${newStatus}">
-            `;
-            document.body.appendChild(form);
-            form.submit();
-        }
-    }
+    // تم نقل وظيفة تغيير الحالة إلى صفحة منفصلة change_store_status.php
 
     function resetPassword(storeId) {
         if (confirm('هل أنت متأكد من إعادة تعيين كلمة المرور لهذا المتجر؟')) {

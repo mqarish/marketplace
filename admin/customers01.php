@@ -1,12 +1,6 @@
 <?php
-require_once '../includes/init.php';
 require_once 'check_admin.php';
-
-// Define BASEPATH for included files
-define('BASEPATH', true);
-
-$page_title = 'إدارة العملاء';
-$page_icon = 'fa-users';
+require_once '../includes/functions.php';
 
 // معالجة الإجراءات
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
@@ -53,10 +47,10 @@ $params = [];
 $types = "";
 
 if (!empty($search)) {
-    $query .= " AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)";
+    $query .= " AND (name LIKE ? OR email LIKE ?)";
     $search_param = "%$search%";
-    array_push($params, $search_param, $search_param, $search_param);
-    $types .= "sss";
+    array_push($params, $search_param, $search_param);
+    $types .= "ss";
 }
 
 if (!empty($status_filter)) {
@@ -79,7 +73,11 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <?php include 'admin_header.php'; ?>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة العملاء - السوق الإلكتروني</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
         .status-badge {
             font-size: 0.875rem;
@@ -101,16 +99,11 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
     </style>
 </head>
 <body>
-    <?php include 'admin_navbar.php'; ?>
-    
-    <div class="container-fluid">
+    <?php include '../includes/admin_navbar.php'; ?>
+
+    <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="fas <?php echo $page_icon; ?>"></i> <?php echo $page_title; ?></h2>
-            <div>
-                <a href="../customer/register.php" class="btn btn-sm btn-outline-primary">
-                    <i class="fas fa-plus"></i> إضافة عميل جديد
-                </a>
-            </div>
+            <h2>إدارة العملاء</h2>
         </div>
 
         <?php if (isset($_SESSION['success'])): ?>
@@ -163,7 +156,6 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
                             <tr>
                                 <th>العميل</th>
                                 <th>البريد الإلكتروني</th>
-                                <th>رقم الهاتف</th>
                                 <th>الحالة</th>
                                 <th>تاريخ التسجيل</th>
                                 <th>الإجراءات</th>
@@ -172,7 +164,7 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
                         <tbody>
                             <?php if (empty($customers)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center">لا يوجد عملاء</td>
+                                    <td colspan="5" class="text-center">لا يوجد عملاء</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($customers as $customer): ?>
@@ -186,7 +178,6 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
                                             </div>
                                         </td>
                                         <td><?php echo htmlspecialchars($customer['email']); ?></td>
-                                        <td><?php echo isset($customer['phone']) ? htmlspecialchars($customer['phone']) : 'غير متوفر'; ?></td>
                                         <td>
                                             <span class="status-badge status-<?php echo $customer['status']; ?>">
                                                 <?php
@@ -253,13 +244,6 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
                                                         </li>
                                                     <?php endif; ?>
                                                     
-                                                    <li>
-                                                        <a href="edit_customer.php?id=<?php echo $customer['id']; ?>" class="dropdown-item text-primary">
-                                                            <i class="bi bi-pencil-square me-2"></i>
-                                                            تعديل البيانات
-                                                        </a>
-                                                    </li>
-                                                    
                                                     <li><hr class="dropdown-divider"></li>
                                                     <li>
                                                         <form method="POST" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف هذا العميل؟');">
@@ -284,7 +268,6 @@ $customers = $result->fetch_all(MYSQLI_ASSOC);
         </div>
     </div>
 
-    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -73,25 +73,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         التقارير
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="suggestions.php" class="nav-link <?php echo $current_page === 'suggestions.php' ? 'active' : ''; ?>">
-                        <i class="fas fa-lightbulb"></i>
-                        اقتراحات العملاء
-                        <?php
-                        // عرض عدد الاقتراحات الجديدة
-                        $pending_suggestions = $conn->query("SELECT COUNT(*) as count FROM suggestions WHERE status = 'pending'")->fetch_assoc();
-                        if ($pending_suggestions && $pending_suggestions['count'] > 0) {
-                            echo '<span class="badge bg-danger rounded-pill ms-2">' . $pending_suggestions['count'] . '</span>';
-                        }
-                        ?>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="settings.php" class="nav-link <?php echo $current_page === 'settings.php' ? 'active' : ''; ?>">
-                        <i class="fas fa-cog"></i>
-                        إعدادات النظام
-                    </a>
-                </li>
             </ul>
             
             <ul class="navbar-nav user-menu">
@@ -111,3 +92,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </div>
     </div>
 </nav>
+
+<?php if (isset($page_title)): ?>
+<div class="bg-light py-2 px-3 mb-3">
+    <div class="container-fluid">
+        <h1 class="h3 mb-0">
+            <?php if (isset($page_icon)): ?>
+                <i class="fas <?php echo $page_icon; ?> me-2"></i>
+            <?php endif; ?>
+            <?php echo $page_title; ?>
+        </h1>
+    </div>
+</div>
+<?php endif; ?>

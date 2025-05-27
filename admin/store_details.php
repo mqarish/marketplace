@@ -25,15 +25,15 @@ if ($check_orders_table->num_rows == 0) {
     $create_orders_table = "CREATE TABLE orders (
         id INT(11) NOT NULL AUTO_INCREMENT,
         order_number VARCHAR(50) NOT NULL,
-        customer_id INT(11) NOT NULL,
+        user_id INT(11) NOT NULL,
         total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         status ENUM('pending', 'processing', 'shipped', 'delivered', 'cancelled') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY (order_number),
-        KEY (customer_id),
-        FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+        KEY (user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
     
     $conn->query($create_orders_table);
@@ -147,12 +147,12 @@ if ($check_orders_table->num_rows > 0 && $check_order_items_table->num_rows > 0)
 // استرجاع الطلبات المرتبطة بالمتجر
 $orders = [];
 if ($check_orders_table->num_rows > 0 && $check_order_items_table->num_rows > 0) {
-    $orders_query = "SELECT DISTINCT o.*, c.name as customer_name,
+    $orders_query = "SELECT DISTINCT o.*, u.name as customer_name,
                    GROUP_CONCAT(CONCAT(p.name, ' (', oi.quantity, ')') SEPARATOR ', ') as products_list
                    FROM orders o
                    JOIN order_items oi ON o.id = oi.order_id
                    JOIN products p ON oi.product_id = p.id
-                   LEFT JOIN customers c ON o.customer_id = c.id
+                   LEFT JOIN users u ON o.user_id = u.id
                    WHERE p.store_id = ?
                    GROUP BY o.id
                    ORDER BY o.created_at DESC
