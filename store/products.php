@@ -285,15 +285,91 @@ try {
         }
         
         .product-img-placeholder {
-            width: 60px;
-            height: 60px;
+            width: 50px;
+            height: 50px;
+            background-color: #f3f4f6;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #f3f4f6;
-            border-radius: 8px;
             color: #9ca3af;
             font-size: 1.5rem;
+        }
+        
+        .product-thumbnail {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .product-thumbnail:hover {
+            transform: scale(1.05);
+        }
+        
+        .image-count-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        /* تنسيق نافذة عرض الصور */
+        .product-images-modal .modal-body {
+            padding: 0;
+        }
+        
+        .product-images-carousel .carousel-item img {
+            height: 300px;
+            object-fit: contain;
+            background-color: #f9f9f9;
+        }
+        
+        .product-images-carousel .carousel-control-prev,
+        .product-images-carousel .carousel-control-next {
+            width: 10%;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 0;
+        }
+        
+        .product-images-carousel .carousel-indicators {
+            margin-bottom: 0.5rem;
+        }
+        
+        .product-images-thumbnails {
+            display: flex;
+            overflow-x: auto;
+            padding: 10px;
+            background-color: #f3f4f6;
+            gap: 10px;
+        }
+        
+        .product-images-thumbnail {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            border: 2px solid transparent;
+        }
+        
+        .product-images-thumbnail.active {
+            opacity: 1;
+            border-color: var(--primary-color);
         }
         
         /* تنسيق البحث والتصفية */
@@ -453,10 +529,45 @@ try {
                                 <?php foreach ($result->filtered_products as $row): ?>
                                     <tr data-product-id="<?php echo $row['id']; ?>">
                                         <td>
-                                            <div class="product-image-container">
-                                                <div class="product-img-placeholder">
-                                                    <i class="bi bi-image"></i>
-                                                </div>
+                                            <div class="product-image-container" data-bs-toggle="tooltip" title="انقر لعرض جميع الصور" onclick="showProductImages(<?php echo $row['id']; ?>)">
+                                                <?php
+                                                // جلب صور المنتج من جدول product_images
+                                                $product_id = $row['id'];
+                                                $images_sql = "SELECT * FROM product_images WHERE product_id = ? ORDER BY display_order ASC";
+                                                $images_stmt = $conn->prepare($images_sql);
+                                                $product_images = [];
+                                                
+                                                if ($images_stmt) {
+                                                    $images_stmt->bind_param("i", $product_id);
+                                                    $images_stmt->execute();
+                                                    $images_result = $images_stmt->get_result();
+                                                    
+                                                    while ($image = $images_result->fetch_assoc()) {
+                                                        $product_images[] = $image;
+                                                    }
+                                                }
+                                                
+                                                if (count($product_images) > 0): 
+                                                    $first_image = $product_images[0];
+                                                    $has_multiple = count($product_images) > 1;
+                                                ?>
+                                                    <div class="position-relative">
+                                                        <img src="../<?php echo htmlspecialchars($first_image['image_url']); ?>" 
+                                                             class="product-thumbnail" 
+                                                             alt="<?php echo htmlspecialchars($row['name']); ?>"
+                                                             onerror="this.src='../assets/images/default-product.jpg';">
+                                                        <?php if ($has_multiple): ?>
+                                                            <span class="image-count-badge"><?php echo count($product_images); ?></span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="product-img-placeholder">
+                                                        <i class="bi bi-image"></i>
+                                                    </div>
+                                                <?php endif; ?>
+                                                
+                                                <!-- تخزين بيانات الصور لاستخدامها في العرض المتحرك -->
+                                                <div class="d-none" id="product-images-data-<?php echo $row['id']; ?>" data-images='<?php echo htmlspecialchars(json_encode($product_images)); ?>' data-product-name="<?php echo htmlspecialchars($row['name']); ?>"></div>
                                             </div>
                                         </td>
                                         <td>
@@ -542,114 +653,389 @@ try {
                             <a href="add-product.php" class="btn btn-primary">إضافة منتج جديد</a>
                         <?php endif; ?>
                     </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal حذف المنتج -->
-    <div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="deleteProductModalLabel">تأكيد الحذف</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>هل أنت متأكد من رغبتك في حذف هذا المنتج؟ هذا الإجراء لا يمكن التراجع عنه.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <form id="deleteProductForm" method="POST" action="delete-product.php">
-                        <input type="hidden" id="product_id" name="product_id" value="">
-                        <button type="submit" class="btn btn-danger">حذف</button>
                     </form>
                 </div>
             </div>
+
+            <!-- جدول المنتجات -->
+            <div class="dashboard-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">قائمة المنتجات</h5>
+                    <span class="badge bg-primary"><?php echo ($result && $result->num_rows) ? $result->num_rows : 0; ?> منتج</span>
+                </div>
+                <div class="card-body p-0">
+                    <?php if ($result && $result->num_rows > 0): ?>
+                        <div class="table-responsive">
+                            <table class="table products-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th width="60">الصورة</th>
+                                        <th>اسم المنتج</th>
+                                        <th>التصنيف</th>
+                                        <th>السعر</th>
+                                        <th>الحالة</th>
+                                        <th>تاريخ الإضافة</th>
+                                        <th width="120">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($result->filtered_products as $row): ?>
+                                        <tr data-product-id="<?php echo $row['id']; ?>">
+                                            <td>
+                                                <div class="product-image-container" data-bs-toggle="tooltip" title="انقر لعرض جميع الصور" onclick="showProductImages(<?php echo $row['id']; ?>)">
+                                                    <?php
+                                                    // جلب صور المنتج من جدول product_images
+                                                    $product_id = $row['id'];
+                                                    $images_sql = "SELECT * FROM product_images WHERE product_id = ? ORDER BY display_order ASC";
+                                                    $images_stmt = $conn->prepare($images_sql);
+                                                    $product_images = [];
+                                                    
+                                                    if ($images_stmt) {
+                                                        $images_stmt->bind_param("i", $product_id);
+                                                        $images_stmt->execute();
+                                                        $images_result = $images_stmt->get_result();
+                                                        
+                                                        while ($image = $images_result->fetch_assoc()) {
+                                                            $product_images[] = $image;
+                                                        }
+                                                    }
+                                                    
+                                                    if (count($product_images) > 0): 
+                                                        $first_image = $product_images[0];
+                                                        $has_multiple = count($product_images) > 1;
+                                                    ?>
+                                                        <div class="position-relative">
+                                                            <img src="../<?php echo htmlspecialchars($first_image['image_url']); ?>" 
+                                                                 class="product-thumbnail" 
+                                                                 alt="<?php echo htmlspecialchars($row['name']); ?>"
+                                                                 onerror="this.src='../assets/images/default-product.jpg';">
+                                                            <?php if ($has_multiple): ?>
+                                                                <span class="image-count-badge"><?php echo count($product_images); ?></span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <div class="product-img-placeholder">
+                                                            <i class="bi bi-image"></i>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    
+                                                    <!-- تخزين بيانات الصور لاستخدامها في العرض المتحرك -->
+                                                    <div class="d-none" id="product-images-data-<?php echo $row['id']; ?>" data-images='<?php echo htmlspecialchars(json_encode($product_images)); ?>' data-product-name="<?php echo htmlspecialchars($row['name']); ?>"></div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="product-name fw-medium"><?php echo htmlspecialchars($row['name']); ?></div>
+                                                <div class="text-muted small">
+                                                    <?php 
+                                                    $desc = isset($row['description']) ? $row['description'] : '';
+                                                    echo mb_substr(htmlspecialchars($desc), 0, 50) . (mb_strlen($desc) > 50 ? '...' : ''); 
+                                                    ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($row['category_name'])): ?>
+                                                    <span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['category_name']); ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php if (isset($row['hide_price']) && $row['hide_price'] == 1): ?>
+                                                    <span class="badge bg-secondary">اتصل للسعر</span>
+                                                <?php else: ?>
+                                                    <?php 
+                                                    $currency_symbol = 'ر.س'; // افتراضياً ريال سعودي
+                                                    if (isset($row['currency'])) {
+                                                        switch ($row['currency']) {
+                                                            case 'YER':
+                                                                $currency_symbol = 'ر.ي'; // ريال يمني
+                                                                break;
+                                                            case 'USD':
+                                                                $currency_symbol = '$'; // دولار أمريكي
+                                                                break;
+                                                            default:
+                                                                $currency_symbol = 'ر.س'; // ريال سعودي
+                                                        }
+                                                    }
+                                                    echo number_format($row['price'], 2) . ' ' . $currency_symbol; 
+                                                    ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><?php echo date('Y-m-d', strtotime($row['created_at'])); ?></td>
+                                            <td>
+                                                <?php 
+                                                $status = isset($row['status']) ? $row['status'] : 'active';
+                                                $status_class = $status == 'active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger';
+                                                $status_text = $status == 'active' ? 'نشط' : 'غير نشط';
+                                                ?>
+                                                <span class="badge <?php echo $status_class; ?>">
+                                                    <?php echo $status_text; ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex">
+                                                    <a href="edit-product.php?id=<?php echo $row['id']; ?>" class="btn-action edit" title="تعديل">
+                                                        <i class="bi bi-pencil-square"></i>
+                                                    </a>
+                                                    <a href="../customer/product-details.php?id=<?php echo $row['id']; ?>" target="_blank" class="btn-action view" title="عرض">
+                                                        <i class="bi bi-eye"></i>
+                                                    </a>
+                                                    <button type="button" class="btn-action delete" title="حذف" onclick="deleteProduct(<?php echo $row['id']; ?>)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <div class="empty-state">
+                            <i class="bi bi-box"></i>
+                            <?php if (isset($query_error) && $query_error): ?>
+                                <h4>حدث خطأ أثناء جلب المنتجات</h4>
+                                <p>يرجى المحاولة مرة أخرى لاحقًا أو تعديل معايير البحث</p>
+                            <?php elseif (!empty($search)): ?>
+                                <h4>لا توجد نتائج تطابق بحثك</h4>
+                                <p>حاول استخدام كلمات بحث مختلفة أو تصفية أخرى</p>
+                                <a href="products.php" class="btn btn-outline-primary">عرض جميع المنتجات</a>
+                            <?php else: ?>
+                                <h4>لا توجد منتجات حالياً</h4>
+                                <p>قم بإضافة منتجات جديدة لعرضها هنا</p>
+                                <a href="add-product.php" class="btn btn-primary">إضافة منتج جديد</a>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    function deleteProduct(productId) {
-        // تعيين معرف المنتج في النموذج
-        document.getElementById('product_id').value = productId;
-        
-        // عرض مربع حوار التأكيد
-        var deleteModal = new bootstrap.Modal(document.getElementById('deleteProductModal'));
-        deleteModal.show();
-    }
+        <!-- نافذة عرض صور المنتج -->
+        <div class="modal fade" id="productImagesModal" tabindex="-1" aria-labelledby="productImagesModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content product-images-modal">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="productImagesModalLabel">صور المنتج</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="productImagesCarousel" class="carousel slide product-images-carousel">
+                            <div class="carousel-indicators" id="carouselIndicators"></div>
+                            <div class="carousel-inner" id="carouselInner"></div>
+                            <button class="carousel-control-prev" type="button" data-bs-target="#productImagesCarousel" data-bs-slide="prev">
+                                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                                <span class="visually-hidden">السابق</span>
+                            </button>
+                            <button class="carousel-control-next" type="button" data-bs-target="#productImagesCarousel" data-bs-slide="next">
+                                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                                <span class="visually-hidden">التالي</span>
+                            </button>
+                        </div>
+                        <div class="product-images-thumbnails" id="imagesThumbnails"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    // استخدام AJAX لحذف المنتج
-    document.getElementById('deleteProductForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        var productId = document.getElementById('product_id').value;
-        var formData = new FormData();
-        formData.append('product_id', productId);
+        <!-- Modal حذف المنتج -->
+        <div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="deleteProductModalLabel">تأكيد الحذف</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>هل أنت متأكد من رغبتك في حذف هذا المنتج؟ هذا الإجراء لا يمكن التراجع عنه.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                        <form id="deleteProductForm" method="POST" action="delete-product.php">
+                            <input type="hidden" id="product_id" name="product_id" value="">
+                            <button type="submit" class="btn btn-danger">حذف</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        fetch('delete-product.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            // إغلاق مربع الحوار
-            var deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteProductModal'));
-            deleteModal.hide();
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+        function deleteProduct(productId) {
+            // تعيين معرف المنتج في النموذج
+            document.getElementById('product_id').value = productId;
+            
+            // عرض مربع حوار التأكيد
+            var deleteModal = new bootstrap.Modal(document.getElementById('deleteProductModal'));
+            deleteModal.show();
+        }
 
-            if (data.success) {
-                // إنشاء عنصر التنبيه
-                var alertDiv = document.createElement('div');
-                alertDiv.className = 'alert alert-success alert-dismissible fade show';
-                alertDiv.innerHTML = `
-                    <i class="bi bi-check-circle-fill me-2"></i>
-                    ${data.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                `;
+        // استخدام AJAX لحذف المنتج
+        document.getElementById('deleteProductForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var productId = document.getElementById('product_id').value;
+            var formData = new FormData();
+            formData.append('product_id', productId);
 
-                // إضافة التنبيه إلى أعلى الصفحة
-                var container = document.querySelector('.container');
-                container.insertBefore(alertDiv, container.firstChild);
+            fetch('delete-product.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // إغلاق مربع الحوار
+                var deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteProductModal'));
+                deleteModal.hide();
 
-                // حذف صف المنتج من الجدول
-                var productRow = document.querySelector(`tr[data-product-id="${productId}"]`);
-                if (productRow) {
-                    productRow.remove();
+                if (data.success) {
+                    // إنشاء عنصر التنبيه
+                    var alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                    alertDiv.innerHTML = `
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        ${data.message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+
+                    // إضافة التنبيه إلى أعلى الصفحة
+                    var container = document.querySelector('.container');
+                    container.insertBefore(alertDiv, container.firstChild);
+
+                    // حذف صف المنتج من الجدول
+                    var productRow = document.querySelector(`tr[data-product-id="${productId}"]`);
+                    if (productRow) {
+                        productRow.remove();
+                    } else {
+                        // إعادة تحميل الصفحة إذا لم يتم العثور على الصف
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                    }
                 } else {
-                    // إعادة تحميل الصفحة إذا لم يتم العثور على الصف
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
+                    // إظهار رسالة خطأ
+                    var alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                    alertDiv.innerHTML = `
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        ${data.message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+
+                    var container = document.querySelector('.container');
+                    container.insertBefore(alertDiv, container.firstChild);
                 }
-            } else {
-                // إظهار رسالة خطأ
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                // إظهار رسالة خطأ عامة
                 var alertDiv = document.createElement('div');
                 alertDiv.className = 'alert alert-danger alert-dismissible fade show';
                 alertDiv.innerHTML = `
                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    ${data.message}
+                    حدث خطأ أثناء حذف المنتج. الرجاء المحاولة مرة أخرى.
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 `;
 
                 var container = document.querySelector('.container');
                 container.insertBefore(alertDiv, container.firstChild);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            // إظهار رسالة خطأ عامة
-            var alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-danger alert-dismissible fade show';
-            alertDiv.innerHTML = `
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                حدث خطأ أثناء حذف المنتج. الرجاء المحاولة مرة أخرى.
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            `;
-
-            var container = document.querySelector('.container');
-            container.insertBefore(alertDiv, container.firstChild);
+            });
+        });
+        </script>
+    <script>
+    // تفعيل tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
         });
     });
+    
+    // عرض صور المنتج في نافذة منبثقة
+    function showProductImages(productId) {
+        const dataElement = document.getElementById(`product-images-data-${productId}`);
+        if (!dataElement) return;
+        
+        try {
+            const imagesData = JSON.parse(dataElement.getAttribute('data-images'));
+            const productName = dataElement.getAttribute('data-product-name');
+            
+            if (!imagesData || imagesData.length === 0) {
+                alert('لا توجد صور متاحة لهذا المنتج');
+                return;
+            }
+            
+            // تعيين عنوان النافذة
+            document.getElementById('productImagesModalLabel').textContent = `صور ${productName}`;
+            
+            // إنشاء عناصر الكاروسيل
+            const carouselInner = document.getElementById('carouselInner');
+            const carouselIndicators = document.getElementById('carouselIndicators');
+            const imagesThumbnails = document.getElementById('imagesThumbnails');
+            
+            // إفراغ المحتويات السابقة
+            carouselInner.innerHTML = '';
+            carouselIndicators.innerHTML = '';
+            imagesThumbnails.innerHTML = '';
+            
+            // إضافة الصور إلى الكاروسيل
+            imagesData.forEach((image, index) => {
+                // إضافة مؤشر
+                const indicator = document.createElement('button');
+                indicator.setAttribute('type', 'button');
+                indicator.setAttribute('data-bs-target', '#productImagesCarousel');
+                indicator.setAttribute('data-bs-slide-to', index.toString());
+                if (index === 0) indicator.classList.add('active');
+                indicator.setAttribute('aria-current', index === 0 ? 'true' : 'false');
+                indicator.setAttribute('aria-label', `صورة ${index + 1}`);
+                carouselIndicators.appendChild(indicator);
+                
+                // إضافة عنصر الكاروسيل
+                const carouselItem = document.createElement('div');
+                carouselItem.classList.add('carousel-item');
+                if (index === 0) carouselItem.classList.add('active');
+                
+                const img = document.createElement('img');
+                img.src = `../${image.image_url}`;
+                img.classList.add('d-block', 'w-100');
+                img.alt = productName;
+                img.onerror = function() { this.src = '../assets/images/default-product.jpg'; };
+                
+                carouselItem.appendChild(img);
+                carouselInner.appendChild(carouselItem);
+                
+                // إضافة صورة مصغرة
+                const thumbnail = document.createElement('img');
+                thumbnail.src = `../${image.image_url}`;
+                thumbnail.classList.add('product-images-thumbnail');
+                if (index === 0) thumbnail.classList.add('active');
+                thumbnail.alt = `صورة مصغرة ${index + 1}`;
+                thumbnail.onclick = function() {
+                    const carousel = bootstrap.Carousel.getInstance(document.getElementById('productImagesCarousel'));
+                    carousel.to(index);
+                    
+                    // تحديث حالة الصور المصغرة
+                    document.querySelectorAll('.product-images-thumbnail').forEach(thumb => thumb.classList.remove('active'));
+                    this.classList.add('active');
+                };
+                imagesThumbnails.appendChild(thumbnail);
+            });
+            
+            // عرض النافذة المنبثقة
+            const modal = new bootstrap.Modal(document.getElementById('productImagesModal'));
+            modal.show();
+            
+            // استمع إلى أحداث الكاروسيل لتحديث الصور المصغرة
+            document.getElementById('productImagesCarousel').addEventListener('slide.bs.carousel', function (event) {
+                const thumbnails = document.querySelectorAll('.product-images-thumbnail');
+                thumbnails.forEach(thumb => thumb.classList.remove('active'));
+                thumbnails[event.to].classList.add('active');
+            });
+            
+        } catch (error) {
+            console.error('خطأ في عرض صور المنتج:', error);
+        }
+    }
     </script>
 </body>
 </html>
