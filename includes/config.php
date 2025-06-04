@@ -14,8 +14,8 @@ define('SITE_URL', 'http://localhost/marketplace');
 
 // معلومات الاتصال بقاعدة البيانات
 $db_host = 'localhost';
-$db_user = 'root';
-$db_pass = '';
+$db_user = 'marketplace';
+$db_pass = 'A8kNYGtFaMd5nKeL';
 $db_name = 'marketplace';
 
 // إنشاء اتصال جديد بالخادم
