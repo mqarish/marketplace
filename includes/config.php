@@ -1,4 +1,7 @@
 <?php
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'loadEnv.php';
+
 // بدء الجلسة قبل أي محتوى إذا لم تكن موجودة بالفعل
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
@@ -13,10 +16,10 @@ error_reporting(E_ALL);
 define('SITE_URL', 'http://localhost/marketplace');
 
 // معلومات الاتصال بقاعدة البيانات
-$db_host = 'localhost';
-$db_user = 'marketplace';
-$db_pass = 'A8kNYGtFaMd5nKeL';
-$db_name = 'marketplace';
+$db_host = env('DB_HOST');
+$db_user = env('DB_USER');
+$db_pass = env('DB_PASSWORD');
+$db_name = env('DB_NAME');
 
 // إنشاء اتصال جديد بالخادم
 $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
