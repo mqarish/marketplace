@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Call Webhook URL
         run: |
-          curl -X POST ${{ vars.WEBHOOK_URL }}
+          curl -X POST "${{ vars.WEBHOOK_URL }}"
