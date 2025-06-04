@@ -1,0 +1,15 @@
+name: Trigger Webhook on Push to Main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-webhook:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call Webhook URL
+        run: |
+          curl -X POST ${{ vars.WEBHOOK_URL }}
