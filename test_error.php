@@ -6,4 +6,5 @@ error_reporting(E_ALL);
 echo "PHP Version: " . PHP_VERSION . "\n";
 echo "Error reporting level: " . error_reporting() . "\n";
 echo "Display errors: " . ini_get('display_errors') . "\n";
+echo "Current Version: v0.0.3 \n";
 ?>
